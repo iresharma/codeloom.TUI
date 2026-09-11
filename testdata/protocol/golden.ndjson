@@ -1,0 +1,13 @@
+{"type": "CreatePath", "path": "a.py", "is_dir": false, "content": "x"}
+{"type": "RenamePath", "src": "a.py", "dest": "b.py"}
+{"type": "DeletePath", "path": "b.py"}
+{"type": "RequestContext", "agent_id": "abc"}
+{"type": "RequestMemory"}
+{"type": "RequestAgentTranscript", "agent_id": "abc"}
+{"type": "RequestSnapshot", "replay": true}
+{"type": "OpenFile", "path": "a.py"}
+{"type": "PathChanged", "path": "a", "action": "mkdir", "dest": ""}
+{"type": "ContextBreakdown", "agent_id": "", "budget": 120000, "prompt_tokens": 0, "compacted": false, "sections": [{"name": "system", "chars": 5, "tokens_est": 1, "text": "hello"}]}
+{"type": "MemoryUpdated", "files": [{"path": "a.py", "stale": true, "purpose": "x"}], "engineering": [{"text": "ship it"}], "product": [], "cicd": [], "other": []}
+{"type": "GitStateUpdated", "git": {"branch": "main", "dirty": true, "staged": ["a.py"], "unstaged": ["b.py"], "untracked": ["c.py"], "staged_diff": "", "unstaged_diff": ""}}
+{"type": "FileContent", "path": "a.py", "content": "hello"}
