@@ -7,7 +7,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/bubbles/help"
+	"github.com/charmbracelet/bubbles/progress"
+	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textarea"
+	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -16,45 +20,9 @@ import (
 	"github.com/iresharma/codeloom.TUI/internal/protocol"
 )
 
-type pane int
-
-const (
-	paneTree pane = iota
-	paneCenter
-	paneRight
-)
-
-type tabKind int
-
-const (
-	tabChat tabKind = iota
-	tabFile
-	tabAgent
-)
-
-type modalKind int
-
-const (
-	modalNone modalKind = iota
-	modalCreateFile
-	modalCreateDir
-	modalRename
-	modalDelete
-	modalPrompt
-)
-
-type chatLine struct {
-	id, role, text, agentID string
-}
-
 type tab struct {
-	kind     tabKind
-	title    string
-	path     string
-	agentID  string
-	body     string
-	diff     string
-	showDiff bool
+	title, path, body, diff string
+	showDiff, edited        bool
 }
 
 type agentRow struct {
@@ -79,6 +47,20 @@ type memFile struct {
 
 type memDec struct{ text string }
 
+type chatLine struct {
+	id, role, text, agentID string
+}
+
+type modalKind int
+
+const (
+	modalNone modalKind = iota
+	modalCreateFile
+	modalCreateDir
+	modalRename
+	modalDelete
+)
+
 type eventMsg protocol.Event
 type errMsg struct{ err error }
 type tickMsg time.Time
@@ -89,26 +71,38 @@ type Model struct {
 	conn          *client.Conn
 	events        <-chan protocol.Event
 	width, height int
-	focus         pane
-	rightSub      int // 0 context, 1 memory
+	focus         focusKind
+	prevFocus     focusKind
+	rightSub      int
+	keys          keySet
+	help          help.Model
+	spin          spinner.Model
+	ctxProg       progress.Model
+	graphZoom     bool
+	chatFilter    string
+	chatFollow    bool
 
 	tree        *fileTree
 	tabs        []tab
 	active      int
 	input       textarea.Model
+	modalInput  textinput.Model
 	chatVP      viewport.Model
 	fileVP      viewport.Model
+	graphVP     viewport.Model
+	inspectVP   viewport.Model
 	chat        []chatLine
 	streams     map[string]int
 	streamAgent map[string]string
 	agentChat   map[string][]chatLine
 
-	cost                     float64
-	tokens, cached, requests int
-	orchState                string
-	git                      gitInfo
-	agents                   []agentRow
-	agentCursor              int
+	cost, elapsed             float64
+	tokens, cached, requests  int
+	promptTok, compTok, turns int
+	orchState                 string
+	git                       gitInfo
+	agents                    []agentRow
+	agentCursor               int
 
 	ctxBudget, ctxUsed, ctxPrompt      int
 	ctxSections                        []ctxSection
@@ -117,10 +111,11 @@ type Model struct {
 	memEng, memProd, memCICD, memOther []memDec
 
 	modal             modalKind
-	modalBuf          string
 	modalPath         string
 	promptID, promptQ string
+	promptKind        string
 	promptChoices     []string
+	promptCursor      int
 
 	status   string
 	lastErr  string
@@ -133,7 +128,7 @@ func New(workspace string, eng *host.Engine, conn *client.Conn) Model {
 	ta.Prompt = "› "
 	ta.SetHeight(1)
 	ta.ShowLineNumbers = false
-	ta.Focus()
+	ta.Blur()
 	ta.KeyMap.InsertNewline.SetEnabled(false)
 	ta.FocusedStyle.CursorLine = lipgloss.NewStyle()
 	ta.BlurredStyle.CursorLine = lipgloss.NewStyle()
@@ -141,13 +136,68 @@ func New(workspace string, eng *host.Engine, conn *client.Conn) Model {
 	ta.BlurredStyle.Placeholder = dimStyle()
 	ta.FocusedStyle.Prompt = lipgloss.NewStyle().Foreground(accent)
 	ta.FocusedStyle.Text = lipgloss.NewStyle().Foreground(fg)
+
+	ti := textinput.New()
+	ti.Prompt = "> "
+	ti.CharLimit = 256
+	ti.Placeholder = ""
+
+	fileVP := viewport.New(20, 10)
+	km := viewport.DefaultKeyMap()
+	km.HalfPageDown.SetEnabled(false)
+	km.HalfPageUp.SetEnabled(false)
+	km.Left.SetEnabled(false)
+	km.Right.SetEnabled(false)
+	fileVP.KeyMap = km
+	fileVP.MouseWheelEnabled = true
+
+	chatVP := viewport.New(20, 8)
+	chatVP.MouseWheelEnabled = true
+
+	graphVP := viewport.New(20, 10)
+	gkm := viewport.DefaultKeyMap()
+	gkm.Up.SetEnabled(false)
+	gkm.Down.SetEnabled(false)
+	gkm.Left.SetEnabled(false)
+	gkm.Right.SetEnabled(false)
+	graphVP.KeyMap = gkm
+
+	inspectVP := viewport.New(20, 8)
+	ikm := viewport.DefaultKeyMap()
+	ikm.Left.SetEnabled(false)
+	ikm.Right.SetEnabled(false)
+	inspectVP.KeyMap = ikm
+	inspectVP.MouseWheelEnabled = true
+
+	sp := spinner.New(spinner.WithSpinner(spinner.MiniDot), spinner.WithStyle(lipgloss.NewStyle().Foreground(accent)))
+	prog := progress.New(progress.WithSolidFill(string(accent)), progress.WithoutPercentage(), progress.WithWidth(14))
+
+	h := help.New()
+	h.ShowAll = false
+	h.Styles.ShortKey = lipgloss.NewStyle().Foreground(accent)
+	h.Styles.ShortDesc = dimStyle()
+	h.Styles.ShortSeparator = dimStyle()
+	h.Styles.FullKey = lipgloss.NewStyle().Foreground(accent)
+	h.Styles.FullDesc = dimStyle()
+
 	m := Model{
 		workspace:   workspace,
 		engine:      eng,
 		conn:        conn,
+		focus:       focusTree,
+		prevFocus:   focusTree,
+		keys:        newKeySet(),
+		help:        h,
+		spin:        sp,
+		ctxProg:     prog,
+		chatFollow:  true,
 		tree:        newFileTree(workspace),
-		tabs:        []tab{{kind: tabChat, title: "chat"}},
 		input:       ta,
+		modalInput:  ti,
+		fileVP:      fileVP,
+		chatVP:      chatVP,
+		graphVP:     graphVP,
+		inspectVP:   inspectVP,
 		streams:     map[string]int{},
 		streamAgent: map[string]string{},
 		agentChat:   map[string][]chatLine{},
@@ -168,6 +218,7 @@ func (m Model) Init() tea.Cmd {
 		m.send(protocol.RequestGit()),
 		m.send(protocol.RequestMemory()),
 		m.send(protocol.RequestContext("")),
+		m.spin.Tick,
 		tick(),
 	)
 }
@@ -210,6 +261,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.layoutViewports()
 	case tickMsg:
 		cmds = append(cmds, tick())
+	case spinner.TickMsg:
+		var cmd tea.Cmd
+		m.spin, cmd = m.spin.Update(msg)
+		if m.busy() {
+			cmds = append(cmds, cmd)
+			m.refreshGraph()
+		}
 	case errMsg:
 		if msg.err != nil {
 			m.lastErr = msg.err.Error()
@@ -220,41 +278,103 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, cmd)
 		}
 		cmds = append(cmds, m.listen())
+		if m.busy() {
+			cmds = append(cmds, m.spin.Tick)
+		}
 	case tea.MouseMsg:
 		if cmd := m.handleMouse(msg); cmd != nil {
 			cmds = append(cmds, cmd)
 		}
 	case tea.KeyMsg:
-		cmd := m.handleKey(msg)
+		cmd, handled := m.handleKey(msg)
 		if cmd != nil {
 			cmds = append(cmds, cmd)
 		}
-	}
-	if m.modal == modalNone && m.focus != paneTree {
-		var cmd tea.Cmd
-		m.input, cmd = m.input.Update(msg)
-		cmds = append(cmds, cmd)
+		if handled {
+			return m, tea.Batch(cmds...)
+		}
+		var c tea.Cmd
+		switch {
+		case m.modal != modalNone:
+			m.modalInput, c = m.modalInput.Update(msg)
+			cmds = append(cmds, c)
+		case m.focus == focusComposer:
+			m.input, c = m.input.Update(msg)
+			cmds = append(cmds, c)
+			m.layoutViewports()
+		case m.focus == focusCode:
+			m.fileVP, c = m.fileVP.Update(msg)
+			cmds = append(cmds, c)
+		case m.focus == focusChat:
+			m.chatVP, c = m.chatVP.Update(msg)
+			cmds = append(cmds, c)
+			m.chatFollow = m.chatVP.AtBottom()
+		case m.focus == focusGraph:
+			m.graphVP, c = m.graphVP.Update(msg)
+			cmds = append(cmds, c)
+		case m.focus == focusInspect:
+			m.inspectVP, c = m.inspectVP.Update(msg)
+			cmds = append(cmds, c)
+		}
+		return m, tea.Batch(cmds...)
 	}
 	return m, tea.Batch(cmds...)
 }
 
 func (m *Model) handleMouse(msg tea.MouseMsg) tea.Cmd {
+	if msg.Action == tea.MouseActionPress && (msg.Button == tea.MouseButtonWheelUp || msg.Button == tea.MouseButtonWheelDown) {
+		var cmd tea.Cmd
+		switch m.paneAt(msg) {
+		case focusCode:
+			m.fileVP, cmd = m.fileVP.Update(msg)
+		case focusChat, focusComposer:
+			m.chatVP, cmd = m.chatVP.Update(msg)
+			m.chatFollow = m.chatVP.AtBottom()
+		case focusGraph:
+			m.graphVP, cmd = m.graphVP.Update(msg)
+		case focusInspect:
+			m.inspectVP, cmd = m.inspectVP.Update(msg)
+		}
+		return cmd
+	}
 	if msg.Action != tea.MouseActionRelease || msg.Button != tea.MouseButtonLeft {
 		return nil
+	}
+	if zones.Get("insp-ctx").InBounds(msg) {
+		m.setFocus(focusInspect)
+		return m.switchInspect(0)
+	}
+	if zones.Get("insp-mem").InBounds(msg) {
+		m.setFocus(focusInspect)
+		return m.switchInspect(1)
+	}
+	for i := range m.promptChoices {
+		if zones.Get("prompt-" + strconv.Itoa(i)).InBounds(msg) {
+			m.setFocus(focusChat)
+			if m.promptCursor == i {
+				return m.answerPrompt(m.promptChoices[i])
+			}
+			m.promptCursor = i
+			return nil
+		}
 	}
 	for i := range m.tabs {
 		if zones.Get("tab-" + strconv.Itoa(i)).InBounds(msg) {
 			m.active = i
+			m.fileVP.YOffset = 0
 			m.refreshFileVP()
+			m.setFocus(focusCode)
 			return nil
 		}
 	}
 	if zones.Get("agent-").InBounds(msg) {
-		return nil
+		m.setFocus(focusGraph)
+		return m.peekAgent("")
 	}
 	for _, a := range m.agents {
 		if zones.Get("agent-" + a.id).InBounds(msg) {
-			return m.openAgent(a.id)
+			m.setFocus(focusGraph)
+			return m.peekAgent(a.id)
 		}
 	}
 	openGit := func(paths []string) tea.Cmd {
@@ -279,136 +399,39 @@ func (m *Model) handleMouse(msg tea.MouseMsg) tea.Cmd {
 			return m.send(protocol.OpenFile(f.path))
 		}
 	}
+	m.setFocus(m.paneAt(msg))
 	return nil
 }
 
-func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
-	if m.modal != modalNone {
-		return m.handleModalKey(msg)
-	}
-	switch msg.String() {
-	case "ctrl+c":
-		m.quitting = true
-		return tea.Quit
-	case "ctrl+x":
-		id := ""
-		if t := m.currentTab(); t != nil && t.kind == tabAgent {
-			id = t.agentID
-		}
-		return m.send(protocol.AbortAgent(id))
-	case "ctrl+w", "tab":
-		m.focus = (m.focus + 1) % 3
-		return nil
-	case "shift+tab":
-		m.focus = (m.focus + 2) % 3
-		return nil
-	case "ctrl+u":
-		return m.send(protocol.UndoLastEdit())
-	case "ctrl+e":
-		return m.closeTab()
-	}
-	if m.focus == paneTree {
-		return m.handleTreeKey(msg)
-	}
-	if m.focus == paneRight {
-		switch msg.String() {
-		case "h", "left":
-			m.rightSub = 0
-			return m.send(protocol.RequestContext(m.contextAgent()))
-		case "l", "right":
-			m.rightSub = 1
-			return m.send(protocol.RequestMemory())
-		case "j", "down":
-			if len(m.agents) > 0 && m.agentCursor < len(m.agents)-1 {
-				m.agentCursor++
-			}
-		case "k", "up":
-			if m.agentCursor > 0 {
-				m.agentCursor--
-			}
-		case "[", "ctrl+k":
-			if m.ctxOpen > 0 {
-				m.ctxOpen--
-			}
-		case "]", "ctrl+j":
-			if m.ctxOpen < len(m.ctxSections)-1 {
-				m.ctxOpen++
-			}
-		case "r":
-			if m.rightSub == 1 {
-				return m.send(protocol.RequestMemory())
-			}
-			return m.send(protocol.RequestContext(m.contextAgent()))
-		case "enter":
-			if a := m.selectedAgent(); a != "" {
-				return m.openAgent(a)
-			}
-			return m.send(protocol.RequestContext(m.contextAgent()))
-		}
-		return nil
-	}
-	if m.focus == paneCenter {
-		switch msg.String() {
-		case "ctrl+t":
-			if m.active < len(m.tabs)-1 {
-				m.active++
-				m.refreshFileVP()
-			}
-		case "ctrl+p":
-			if m.active > 0 {
-				m.active--
-				m.refreshFileVP()
-			}
-		case "ctrl+d":
-			t := m.currentTab()
-			if t != nil && t.kind == tabFile {
-				t.showDiff = !t.showDiff
-				m.refreshFileVP()
-				return nil
-			}
-		case "enter":
-			if strings.TrimSpace(m.input.Value()) == "" {
-				return nil
-			}
-			text := strings.TrimSpace(m.input.Value())
-			m.input.Reset()
-			if m.promptID != "" {
-				id := m.promptID
-				m.promptID = ""
-				return m.send(protocol.AnswerPrompt(id, text))
-			}
-			return m.send(protocol.SubmitUserMessage(text))
-		}
-	}
-	return nil
+func (m *Model) openModal(kind modalKind, initial, path string) {
+	m.modal = kind
+	m.modalPath = path
+	m.modalInput.SetValue(initial)
+	m.modalInput.CursorEnd()
+	m.modalInput.Focus()
 }
 
 func (m *Model) handleModalKey(msg tea.KeyMsg) tea.Cmd {
 	switch msg.String() {
 	case "esc":
 		m.modal = modalNone
-		m.modalBuf = ""
+		m.modalInput.Blur()
 		return nil
 	case "enter":
 		return m.commitModal()
-	case "backspace":
-		if len(m.modalBuf) > 0 {
-			m.modalBuf = m.modalBuf[:len(m.modalBuf)-1]
-		}
-	default:
-		if len(msg.Runes) == 1 {
-			m.modalBuf += string(msg.Runes)
-		}
 	}
-	return nil
+	var cmd tea.Cmd
+	m.modalInput, cmd = m.modalInput.Update(msg)
+	return cmd
 }
 
 func (m *Model) commitModal() tea.Cmd {
 	kind := m.modal
-	buf := strings.TrimSpace(m.modalBuf)
+	buf := strings.TrimSpace(m.modalInput.Value())
 	path := m.modalPath
 	m.modal = modalNone
-	m.modalBuf = ""
+	m.modalInput.Blur()
+	m.modalInput.SetValue("")
 	switch kind {
 	case modalCreateFile:
 		if buf == "" {
@@ -443,10 +466,6 @@ func (m *Model) commitModal() tea.Cmd {
 			return nil
 		}
 		return m.send(protocol.DeletePath(path))
-	case modalPrompt:
-		id := m.promptID
-		m.promptID = ""
-		return m.send(protocol.AnswerPrompt(id, buf))
 	}
 	return nil
 }
@@ -478,27 +497,21 @@ func (m *Model) handleTreeKey(msg tea.KeyMsg) tea.Cmd {
 		}
 		return m.send(protocol.OpenFile(n.path))
 	case "a":
-		m.modal = modalCreateFile
-		m.modalBuf = ""
+		m.openModal(modalCreateFile, "", "")
 	case "A":
-		m.modal = modalCreateDir
-		m.modalBuf = ""
+		m.openModal(modalCreateDir, "", "")
 	case "r":
 		n := m.tree.current()
 		if n == nil {
 			return nil
 		}
-		m.modal = modalRename
-		m.modalPath = n.path
-		m.modalBuf = n.name
+		m.openModal(modalRename, n.name, n.path)
 	case "d":
 		n := m.tree.current()
 		if n == nil {
 			return nil
 		}
-		m.modal = modalDelete
-		m.modalPath = n.path
-		m.modalBuf = ""
+		m.openModal(modalDelete, "", n.path)
 	case "R":
 		m.tree.reload()
 	}
@@ -539,6 +552,9 @@ func (m *Model) handleEvent(ev protocol.Event) tea.Cmd {
 					lines[len(lines)-1].text = ev.Str("text")
 					lines[len(lines)-1].role = ev.Str("role")
 					m.agentChat[aid] = lines
+					if m.chatFilter == aid {
+						m.refreshChat()
+					}
 				} else {
 					m.appendAgent(aid, ev.Str("role"), ev.Str("text"), false)
 				}
@@ -574,17 +590,24 @@ func (m *Model) handleEvent(ev protocol.Event) tea.Cmd {
 	case "FileEdited":
 		path := ev.Str("path")
 		diff := ev.Str("diff")
+		found := false
 		for i := range m.tabs {
-			if m.tabs[i].kind == tabFile && m.tabs[i].path == path {
+			if m.tabs[i].path == path {
 				m.tabs[i].diff = diff
+				m.tabs[i].edited = true
+				found = true
 			}
 		}
 		m.tree.reload()
+		if !found && path != "" {
+			return m.send(protocol.OpenFile(path))
+		}
 	case "FileTreeUpdated", "PathChanged":
 		m.tree.reload()
 		m.status = ev.Type
 	case "GitStateUpdated":
 		m.applyGit(ev.Map("git"))
+		m.refreshInspect()
 	case "SnapshotReady":
 		snap := ev.Map("snapshot")
 		if g, ok := snap["git"].(map[string]any); ok {
@@ -592,19 +615,28 @@ func (m *Model) handleEvent(ev protocol.Event) tea.Cmd {
 		}
 		if s, ok := snap["stats"].(map[string]any); ok {
 			m.applyStats(s)
+		} else {
+			m.applyStats(snap)
 		}
+		m.refreshInspect()
 	case "StatsUpdated":
-		m.applyStats(ev.Map("stats"))
+		m.applyStats(ev.Raw)
 	case "AgentStateChanged":
 		if ev.Str("agent_id") == "" {
 			m.orchState = ev.Str("state")
 		}
 		id := ev.Str("agent_id")
-		for i := range m.agents {
-			if m.agents[i].id == id {
-				m.agents[i].status = ev.Str("state")
+		st := ev.Str("state")
+		if id != "" && agentDone(st) {
+			m.dropAgent(id)
+		} else if id != "" {
+			for i := range m.agents {
+				if m.agents[i].id == id {
+					m.agents[i].status = st
+				}
 			}
 		}
+		m.refreshGraph()
 	case "AgentsUpdated":
 		var live []agentRow
 		for _, raw := range ev.Slice("agents") {
@@ -622,6 +654,7 @@ func (m *Model) handleEvent(ev protocol.Event) tea.Cmd {
 		m.mergeAgents(live)
 	case "AgentStarted":
 		m.status = "spawned " + ev.Str("profile")
+		m.refreshGraph()
 	case "ContextBreakdown":
 		m.ctxBudget = ev.Int("budget")
 		m.ctxPrompt = ev.Int("prompt_tokens")
@@ -639,6 +672,10 @@ func (m *Model) handleEvent(ev protocol.Event) tea.Cmd {
 			m.ctxSections = append(m.ctxSections, sec)
 		}
 		m.ctxUsed = used
+		if m.ctxOpen >= len(m.ctxSections) {
+			m.ctxOpen = max(0, len(m.ctxSections)-1)
+		}
+		m.refreshInspect()
 	case "MemoryUpdated":
 		m.memFiles = m.memFiles[:0]
 		for _, raw := range ev.Slice("files") {
@@ -651,13 +688,18 @@ func (m *Model) handleEvent(ev protocol.Event) tea.Cmd {
 		m.memProd = decisions(ev.Slice("product"))
 		m.memCICD = decisions(ev.Slice("cicd"))
 		m.memOther = decisions(ev.Slice("other"))
+		m.refreshInspect()
 	case "UserPromptRequested":
 		m.promptID = ev.Str("prompt_id")
 		m.promptQ = ev.Str("question")
+		m.promptKind = ev.Str("kind")
 		m.promptChoices = protocol.AsStringSlice(ev.Raw["choices"])
-		m.modal = modalPrompt
-		m.modalBuf = ""
-		m.status = "prompt: " + ev.Str("kind")
+		m.promptCursor = 0
+		m.chatFollow = true
+		m.input.Reset()
+		m.setFocus(focusComposer)
+		m.status = "prompt: " + m.promptKind
+		m.layoutViewports()
 	case "ErrorOccurred", "WarningOccurred":
 		m.lastErr = ev.Str("message")
 	case "SessionEnded":
@@ -678,116 +720,106 @@ func (m *Model) applyGit(g map[string]any) {
 }
 
 func (m *Model) applyStats(s map[string]any) {
-	m.cost = num(s["cost"])
-	m.tokens = int(num(s["total_tokens"]))
-	m.cached = int(num(s["cached_tokens"]))
-	m.requests = int(num(s["requests"]))
+	if s == nil {
+		return
+	}
+	if nested, ok := s["stats"].(map[string]any); ok {
+		m.applyStatsFields(nested)
+		return
+	}
+	m.applyStatsFields(s)
 }
 
-func (m *Model) layoutViewports() {
-	_, centerW, _, bodyH := m.dims()
-	innerW := max(10, centerW-2)
-	innerH := max(8, bodyH-2)
-	chatH := max(3, innerH-4) // tab + composer
-	m.chatVP.Width = innerW
-	m.chatVP.Height = chatH
-	m.fileVP.Width = innerW
-	m.fileVP.Height = chatH
-	m.input.SetWidth(max(12, innerW-4))
-	m.input.SetHeight(1)
+func (m *Model) applyStatsFields(s map[string]any) {
+	if v, ok := lookupNum(s, "cost", "cost_usd", "usd", "total_cost"); ok {
+		m.cost = v
+	}
+	if v, ok := lookupNum(s, "prompt_tokens", "input_tokens"); ok {
+		m.promptTok = int(v)
+	}
+	if v, ok := lookupNum(s, "completion_tokens", "output_tokens"); ok {
+		m.compTok = int(v)
+	}
+	if v, ok := lookupNum(s, "total_tokens", "tokens"); ok {
+		m.tokens = int(v)
+	} else if m.promptTok+m.compTok > 0 {
+		m.tokens = m.promptTok + m.compTok
+	}
+	if v, ok := lookupNum(s, "cached_tokens", "cache_tokens", "cached"); ok {
+		m.cached = int(v)
+	}
+	if v, ok := lookupNum(s, "requests", "request_count"); ok {
+		m.requests = int(v)
+	}
+	if v, ok := lookupNum(s, "elapsed_s", "elapsed"); ok {
+		m.elapsed = v
+	}
+	if v, ok := lookupNum(s, "turns"); ok {
+		m.turns = int(v)
+	}
+	if runs := asMaps(s["agent_runs"]); len(runs) > 0 {
+		sum := 0.0
+		for _, row := range runs {
+			sum += num(row["cost"])
+		}
+		m.cost += sum
+	}
 }
 
-func (m Model) dims() (left, center, right, body int) {
-	w, h := m.width, m.height
-	if w < 40 {
-		w = 80
-	}
-	if h < 20 {
-		h = 24
-	}
-	left, right = 30, 38
-	if w < 120 {
-		left, right = 26, 34
-	}
-	if w < 90 {
-		left, right = 22, 28
-	}
-	center = w - left - right
-	if center < 20 {
-		center = 20
-	}
-	body = h - 1
-	return
-}
-
-func (m Model) View() string {
-	if m.width == 0 {
-		return "starting…"
-	}
-	leftW, centerW, rightW, bodyH := m.dims()
-	left := paneStyle(m.focus == paneTree, leftW, bodyH).Render(m.viewTree(leftW-2, bodyH-2))
-	center := paneStyle(m.focus == paneCenter, centerW, bodyH).Render(m.viewCenter(centerW-2, bodyH-2))
-	right := paneStyle(m.focus == paneRight, rightW, bodyH).Render(m.viewRight(rightW-2, bodyH-2))
-	cols := lipgloss.JoinHorizontal(lipgloss.Top, left, center, right)
-	ui := lipgloss.JoinVertical(lipgloss.Left, cols, m.viewFooter())
-	if m.modal != modalNone {
-		ui = lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, m.viewModal(),
-			lipgloss.WithWhitespaceChars(" "),
-			lipgloss.WithWhitespaceForeground(dim),
-		)
-	}
-	return zones.Scan(ui)
-}
-
-func (m Model) viewFooter() string {
-	owned := "attach"
-	if m.engine != nil && m.engine.Owned {
-		owned = "spawned"
-	}
-	focus := []string{"files", "chat", "side"}[int(m.focus)]
-	err := m.lastErr
-	if len(err) > 40 {
-		err = err[:40]
-	}
-	left := fmt.Sprintf(" %s  %s  %s", "codeloom", owned, focus)
-	br := m.git.branch
-	if br == "" {
-		br = "-"
-	}
-	right := fmt.Sprintf("$%.3f  %s  tab·panes  %s ", m.cost, br, err)
-	gap := max(0, m.width-lipgloss.Width(left)-lipgloss.Width(right))
-	line := left + strings.Repeat(" ", gap) + right
-	if len(line) > m.width && m.width > 0 {
-		line = line[:m.width]
-	}
-	return lipgloss.NewStyle().Background(bgAlt).Foreground(dim).Width(max(1, m.width)).Render(line)
-}
-
-func (m Model) viewModal() string {
-	title := "input"
-	help := "enter confirm · esc cancel"
-	switch m.modal {
-	case modalCreateFile:
-		title = "new file"
-	case modalCreateDir:
-		title = "new directory"
-	case modalRename:
-		title = "rename " + m.modalPath
-	case modalDelete:
-		title = "delete " + m.modalPath + " ? (y/n)"
-	case modalPrompt:
-		title = m.promptQ
-		if len(m.promptChoices) > 0 {
-			help = strings.Join(m.promptChoices, " / ")
+func asMaps(v any) []map[string]any {
+	arr, _ := v.([]any)
+	out := make([]map[string]any, 0, len(arr))
+	for _, item := range arr {
+		row, ok := item.(map[string]any)
+		if ok {
+			out = append(out, row)
 		}
 	}
-	box := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(accent).
-		Padding(1, 2).
-		Width(min(60, m.width-4)).
-		Render(titleStyle().Render(title) + "\n\n> " + m.modalBuf + "█\n\n" + dimStyle().Render(help))
-	return box
+	return out
+}
+
+func lookupNum(s map[string]any, keys ...string) (float64, bool) {
+	for _, k := range keys {
+		if v, ok := s[k]; ok && v != nil {
+			if n, ok := numeric(v); ok {
+				return n, true
+			}
+			if nested, ok := v.(map[string]any); ok {
+				if n, ok := lookupNum(nested, keys...); ok {
+					return n, true
+				}
+			}
+		}
+	}
+	for _, nest := range []string{"stats", "usage", "metrics", "totals"} {
+		m, _ := s[nest].(map[string]any)
+		if len(m) == 0 {
+			continue
+		}
+		if v, ok := lookupNum(m, keys...); ok {
+			return v, true
+		}
+	}
+	return 0, false
+}
+
+func numeric(v any) (float64, bool) {
+	switch t := v.(type) {
+	case float64:
+		return t, true
+	case float32:
+		return float64(t), true
+	case int:
+		return float64(t), true
+	case int64:
+		return float64(t), true
+	case int32:
+		return float64(t), true
+	case string:
+		n, err := strconv.ParseFloat(strings.TrimPrefix(strings.TrimSpace(t), "$"), 64)
+		return n, err == nil
+	}
+	return 0, false
 }
 
 func (m Model) Close() {
@@ -806,8 +838,17 @@ func num(v any) float64 {
 	switch t := v.(type) {
 	case float64:
 		return t
+	case float32:
+		return float64(t)
 	case int:
 		return float64(t)
+	case int64:
+		return float64(t)
+	case int32:
+		return float64(t)
+	case string:
+		n, _ := strconv.ParseFloat(strings.TrimPrefix(strings.TrimSpace(t), "$"), 64)
+		return n
 	}
 	return 0
 }

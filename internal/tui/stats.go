@@ -7,60 +7,54 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-func (m Model) viewRight(w, h int) string {
-	statsH := 8
-	graphH := max(7, h/5)
-	ctxH := h - statsH - graphH
-	if ctxH < 8 {
-		ctxH = 8
-		graphH = max(5, h-statsH-ctxH)
+func (m Model) viewSession(w int) string {
+	in, out := m.promptTok, m.compTok
+	if in+out == 0 && m.tokens > 0 {
+		out = m.tokens
 	}
-	if statsH+graphH+ctxH > h {
-		ctxH = max(4, h-statsH-graphH)
+	line1 := fmt.Sprintf(" $%s  %s in / %s out", fmtCost(m.cost), fmtTokens(in), fmtTokens(out))
+	if m.cached > 0 {
+		line1 += "  " + fmtTokens(m.cached) + " cache"
 	}
-	return lipgloss.JoinVertical(lipgloss.Top,
-		fit(m.viewStats(w), w, statsH),
-		fit(m.viewGraph(w, graphH), w, graphH),
-		fit(m.viewContext(w, ctxH), w, ctxH),
-	)
-}
-
-func (m Model) viewStats(w int) string {
+	line2 := ""
+	if m.elapsed > 0 || m.turns > 0 {
+		line2 = fmt.Sprintf(" %s  turn %d", fmtElapsed(m.elapsed), m.turns)
+	}
 	br := m.git.branch
 	if br == "" {
 		br = "no git"
 	}
-	dirty := dimStyle().Render(" clean")
+	dirty := "clean"
 	if m.git.dirty {
-		dirty = gitMod().Render(" dirty")
+		dirty = "dirty"
 	}
-	var b strings.Builder
-	b.WriteString(headerBar("session", w) + "\n")
-	b.WriteString(fmt.Sprintf(" $%.3f  %s  cache %d\n", m.cost, fmt.Sprintf("%d tok", m.tokens), m.cached))
-	b.WriteString(" " + br + dirty + fmt.Sprintf("   +%d  ~%d  ?%d\n",
-		len(m.git.staged), len(m.git.unstaged), len(m.git.untracked)))
-	shown := 0
-	writeGit := func(label string, paths []string, sty lipgloss.Style) {
-		for _, p := range paths {
-			if p == "" || shown >= 3 {
-				continue
-			}
-			name := p
-			if len(name) > w-4 {
-				name = "…" + name[len(name)-(w-5):]
-			}
-			b.WriteString(zones.Mark("git-"+p, sty.Render(" "+label+" "+name)) + "\n")
-			shown++
-		}
+	git := fmt.Sprintf(" %s %s  +%d ~%d ?%d", br, dirty, len(m.git.staged), len(m.git.unstaged), len(m.git.untracked))
+	if line2 == "" {
+		line2 = git
+	} else {
+		line2 += "  " + strings.TrimSpace(git)
 	}
-	writeGit("A", m.git.staged, gitAdd())
-	writeGit("M", m.git.unstaged, gitMod())
-	writeGit("?", m.git.untracked, gitUntracked())
-	extra := len(m.git.staged) + len(m.git.unstaged) + len(m.git.untracked) - shown
-	if extra > 0 {
-		b.WriteString(dimStyle().Render(fmt.Sprintf(" +%d more", extra)) + "\n")
+	return clip(line1, w) + "\n" + clip(line2, w)
+}
+
+func fmtCost(c float64) string {
+	switch {
+	case c >= 100:
+		return fmt.Sprintf("%.0f", c)
+	case c >= 1:
+		return fmt.Sprintf("%.2f", c)
+	case c >= 0.01:
+		return fmt.Sprintf("%.3f", c)
+	default:
+		return fmt.Sprintf("%.3f", c)
 	}
-	return b.String()
+}
+
+func fmtElapsed(s float64) string {
+	if s < 60 {
+		return fmt.Sprintf("%.1fs", s)
+	}
+	return fmt.Sprintf("%.0fm%02.0fs", s/60, float64(int(s)%60))
 }
 
 func (m Model) gitGlyph(path string) string {
@@ -115,8 +109,7 @@ func (m Model) viewTree(w, h int) string {
 			}
 		}
 		glyph := m.gitGlyph(n.path)
-		name := n.name
-		line := pad + mark + name + glyph
+		line := pad + mark + n.name + glyph
 		if i == m.tree.cursor {
 			line = lipgloss.NewStyle().Foreground(bg).Background(accent).Bold(true).Width(max(1, w)).Render(" " + line)
 		} else {

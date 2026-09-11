@@ -2,6 +2,8 @@ package tui
 
 import (
 	"fmt"
+	"path/filepath"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -10,48 +12,47 @@ import (
 
 func (m *Model) openFileTab(path, content string) {
 	for i, t := range m.tabs {
-		if t.kind == tabFile && t.path == path {
+		if t.path == path {
 			m.tabs[i].body = content
 			m.active = i
+			m.tabs[i].edited = false
+			m.fileVP.YOffset = 0
 			m.refreshFileVP()
+			if m.focus != focusComposer {
+				m.setFocus(focusCode)
+			}
 			return
 		}
 	}
-	m.tabs = append(m.tabs, tab{kind: tabFile, title: path, path: path, body: content})
+	title := path
+	if base := filepath.Base(path); base != "" && base != "." {
+		title = base
+	}
+	m.tabs = append(m.tabs, tab{title: title, path: path, body: content})
 	m.active = len(m.tabs) - 1
+	m.fileVP.YOffset = 0
+	m.refreshFileVP()
+	if m.focus != focusComposer {
+		m.setFocus(focusCode)
+	}
+}
+
+func (m *Model) nextTab(delta int) {
+	if len(m.tabs) == 0 {
+		return
+	}
+	m.active = (m.active + delta + len(m.tabs)) % len(m.tabs)
+	m.fileVP.YOffset = 0
 	m.refreshFileVP()
 }
 
-func (m *Model) openAgent(id string) tea.Cmd {
-	short := id
-	if len(short) > 8 {
-		short = short[:8]
-	}
-	profile := "agent"
-	for _, a := range m.agents {
-		if a.id == id {
-			profile = a.profile
-		}
-	}
-	title := profile + " · " + short
-	for i, t := range m.tabs {
-		if t.kind == tabAgent && t.agentID == id {
-			m.active = i
-			return m.send(protocol.RequestAgentTranscript(id))
-		}
-	}
-	m.tabs = append(m.tabs, tab{kind: tabAgent, title: title, agentID: id})
-	m.active = len(m.tabs) - 1
-	return m.send(protocol.RequestAgentTranscript(id))
-}
-
 func (m *Model) closeTab() tea.Cmd {
-	if m.active <= 0 || m.active >= len(m.tabs) {
+	if m.active < 0 || m.active >= len(m.tabs) {
 		return nil
 	}
 	t := m.tabs[m.active]
 	var cmd tea.Cmd
-	if t.kind == tabFile && t.path != "" {
+	if t.path != "" {
 		cmd = m.send(protocol.CloseFile(t.path))
 	}
 	m.tabs = append(m.tabs[:m.active], m.tabs[m.active+1:]...)
@@ -69,31 +70,34 @@ func (m *Model) currentTab() *tab {
 	return &m.tabs[m.active]
 }
 
-func (m Model) viewCenter(w, h int) string {
-	inputH := 3
-	headH := 1
-	bodyH := h - inputH - headH
-	if bodyH < 1 {
-		bodyH = 1
-	}
+func (m Model) viewCode(w, h int) string {
 	head := m.viewTabBar(w)
-	body := m.viewCenterBody(w, bodyH)
-	in := m.viewComposer(w, inputH)
-	return lipgloss.JoinVertical(lipgloss.Top, head, body, in)
+	bodyH := max(1, h-lipgloss.Height(head))
+	body := m.viewCodeBody(w, bodyH)
+	return lipgloss.JoinVertical(lipgloss.Top, head, body)
 }
 
 func (m Model) viewTabBar(w int) string {
+	if len(m.tabs) == 0 {
+		return lipgloss.NewStyle().Foreground(dim).Background(bgAlt).Width(max(1, w)).Render(" no file")
+	}
 	active := lipgloss.NewStyle().Foreground(bg).Background(accent).Bold(true).Padding(0, 1)
 	idle := lipgloss.NewStyle().Foreground(dim).Padding(0, 1)
+	edited := lipgloss.NewStyle().Foreground(yellow).Padding(0, 1)
 	var parts []string
 	for i, t := range m.tabs {
 		label := t.title
-		if len(label) > 24 {
-			label = "…" + label[len(label)-23:]
+		if t.edited {
+			label = "● " + label
+		}
+		if lipgloss.Width(label) > 22 {
+			label = "…" + label[len(label)-21:]
 		}
 		st := idle
 		if i == m.active {
 			st = active
+		} else if t.edited {
+			st = edited
 		}
 		parts = append(parts, zones.Mark("tab-"+fmt.Sprint(i), st.Render(label)))
 	}
@@ -101,36 +105,55 @@ func (m Model) viewTabBar(w int) string {
 	return lipgloss.NewStyle().Background(bgAlt).Width(max(1, w)).Render(bar)
 }
 
-func (m Model) viewCenterBody(w, h int) string {
+func (m Model) viewCodeBody(w, h int) string {
 	t := m.currentTab()
-	switch {
-	case t == nil || t.kind == tabChat:
-		if len(m.chat) == 0 {
-			msg := lipgloss.JoinVertical(lipgloss.Center,
-				titleStyle().Render("codeloom"),
-				"",
-				dimStyle().Render("orchestrator chat"),
-				dimStyle().Render("type below · enter to send"),
-			)
-			return lipgloss.Place(w, h, lipgloss.Center, lipgloss.Center, msg)
+	if t == nil {
+		recent := m.recentFiles()
+		msg := lipgloss.JoinVertical(lipgloss.Center,
+			titleStyle().Render("code"),
+			"",
+			dimStyle().Render("open a file from the tree"),
+			dimStyle().Render("enter · 1 files"),
+		)
+		if len(recent) > 0 {
+			msg = lipgloss.JoinVertical(lipgloss.Center, msg, "", dimStyle().Render(strings.Join(recent, "  ")))
 		}
-		return m.chatVP.View()
-	case t.kind == tabFile:
-		hint := ""
-		if t.showDiff && t.diff != "" {
-			hint = dimStyle().Render(" diff overlay  ctrl+d to restore file") + "\n"
-		}
-		return fit(hint+m.fileVP.View(), w, h)
-	case t.kind == tabAgent:
-		return fit(m.viewAgentChat(t.agentID), w, h)
+		return lipgloss.Place(w, h, lipgloss.Center, lipgloss.Center, msg)
 	}
-	return fit("", w, h)
+	hint := ""
+	if t.showDiff && t.diff != "" {
+		hint = dimStyle().Render(" diff overlay  ctrl+d restore") + "\n"
+	}
+	return fit(hint+m.fileVP.View(), w, h)
+}
+
+func (m Model) recentFiles() []string {
+	var out []string
+	for _, t := range m.tabs {
+		if t.path != "" {
+			out = append(out, filepath.Base(t.path))
+		}
+		if len(out) >= 4 {
+			break
+		}
+	}
+	return out
 }
 
 func (m Model) viewComposer(w, h int) string {
-	return sectionBorder().
+	c := border
+	if m.focus == focusComposer {
+		c = focusC
+	}
+	return zones.Mark("pane-composer", lipgloss.NewStyle().
+		Border(lipgloss.NormalBorder()).
+		BorderTop(true).
+		BorderBottom(false).
+		BorderLeft(false).
+		BorderRight(false).
+		BorderForeground(c).
 		Width(max(1, w)).
 		Height(max(1, h)).
 		Padding(0, 1).
-		Render(m.input.View())
+		Render(m.input.View()))
 }

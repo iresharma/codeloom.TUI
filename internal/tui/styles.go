@@ -26,7 +26,7 @@ func paneStyle(focused bool, w, h int) lipgloss.Style {
 		c = focusC
 	}
 	return lipgloss.NewStyle().
-		Border(lipgloss.NormalBorder()).
+		Border(lipgloss.RoundedBorder()).
 		BorderForeground(c).
 		Width(max(1, w-2)).
 		Height(max(1, h-2)).
