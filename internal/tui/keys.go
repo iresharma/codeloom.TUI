@@ -37,6 +37,7 @@ type keySet struct {
 	Peek, Ctx, Mem, InspRefresh key.Binding
 	SecUp, SecDown              key.Binding
 	PromptOK                    key.Binding
+	Settings                    key.Binding
 }
 
 func newKeySet() keySet {
@@ -72,6 +73,7 @@ func newKeySet() keySet {
 		SecUp:       key.NewBinding(key.WithKeys("k", "up"), key.WithHelp("k", "prev section")),
 		SecDown:     key.NewBinding(key.WithKeys("j", "down"), key.WithHelp("j", "next section")),
 		PromptOK:    key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "choose")),
+		Settings:    key.NewBinding(key.WithKeys(","), key.WithHelp(",", "settings")),
 	}
 }
 
@@ -112,6 +114,7 @@ func (m Model) FullHelp() [][]key.Binding {
 		{k.TabPrev, k.TabNext, k.TabClose, k.Diff},
 		{k.Open, k.NewFile, k.NewDir, k.Rename, k.Delete, k.Refresh},
 		{k.Peek, k.Ctx, k.Mem, k.Undo, k.Abort, k.Quit},
+		{k.Settings},
 	}
 }
 
@@ -150,6 +153,9 @@ func (m *Model) cycleFocus(delta int) {
 }
 
 func (m *Model) handleKey(msg tea.KeyMsg) (cmd tea.Cmd, handled bool) {
+	if m.settingsOpen {
+		return m.handleSettingsKey(msg), true
+	}
 	if m.modal != modalNone {
 		return m.handleModalKey(msg), true
 	}
@@ -229,6 +235,9 @@ func (m *Model) handleKey(msg tea.KeyMsg) (cmd tea.Cmd, handled bool) {
 		return nil, true
 	case key.Matches(msg, k.Undo):
 		return m.send(protocol.UndoLastEdit()), true
+	case key.Matches(msg, k.Settings):
+		m.openSettings()
+		return nil, true
 	}
 
 	switch m.focus {

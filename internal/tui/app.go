@@ -66,21 +66,26 @@ type errMsg struct{ err error }
 type tickMsg time.Time
 
 type Model struct {
-	workspace     string
-	engine        *host.Engine
-	conn          *client.Conn
-	events        <-chan protocol.Event
-	width, height int
-	focus         focusKind
-	prevFocus     focusKind
-	rightSub      int
-	keys          keySet
-	help          help.Model
-	spin          spinner.Model
-	ctxProg       progress.Model
-	graphZoom     bool
-	chatFilter    string
-	chatFollow    bool
+	workspace       string
+	engine          *host.Engine
+	conn            *client.Conn
+	events          <-chan protocol.Event
+	width, height   int
+	focus           focusKind
+	prevFocus       focusKind
+	rightSub        int
+	keys            keySet
+	help            help.Model
+	spin            spinner.Model
+	ctxProg         progress.Model
+	graphZoom       bool
+	chatFilter      string
+	chatFollow      bool
+	showLineNumbers bool
+
+	settingsOpen     bool
+	settingsCursor   int
+	settingsThemeIdx int
 
 	tree        *fileTree
 	tabs        []tab
@@ -181,31 +186,42 @@ func New(workspace string, eng *host.Engine, conn *client.Conn) Model {
 	h.Styles.FullDesc = dimStyle()
 
 	m := Model{
-		workspace:   workspace,
-		engine:      eng,
-		conn:        conn,
-		focus:       focusTree,
-		prevFocus:   focusTree,
-		keys:        newKeySet(),
-		help:        h,
-		spin:        sp,
-		ctxProg:     prog,
-		chatFollow:  true,
-		tree:        newFileTree(workspace),
-		input:       ta,
-		modalInput:  ti,
-		fileVP:      fileVP,
-		chatVP:      chatVP,
-		graphVP:     graphVP,
-		inspectVP:   inspectVP,
-		streams:     map[string]int{},
-		streamAgent: map[string]string{},
-		agentChat:   map[string][]chatLine{},
-		orchState:   "idle",
-		status:      "connected",
+		workspace:       workspace,
+		engine:          eng,
+		conn:            conn,
+		focus:           focusTree,
+		prevFocus:       focusTree,
+		keys:            newKeySet(),
+		help:            h,
+		spin:            sp,
+		ctxProg:         prog,
+		chatFollow:      true,
+		showLineNumbers: true,
+		tree:            newFileTree(workspace),
+		input:           ta,
+		modalInput:      ti,
+		fileVP:          fileVP,
+		chatVP:          chatVP,
+		graphVP:         graphVP,
+		inspectVP:       inspectVP,
+		streams:         map[string]int{},
+		streamAgent:     map[string]string{},
+		agentChat:       map[string][]chatLine{},
+		orchState:       "idle",
+		status:          "connected",
 	}
 	if conn != nil {
 		m.events = conn.Events()
+	}
+	if s, err := loadSettings(); err == nil {
+		if s.Theme != "" {
+			setTheme(s.Theme)
+		}
+		m.showLineNumbers = s.ShowLineNumbers
+	}
+	m.settingsThemeIdx = themeIndex(currentTheme.name)
+	if m.settingsThemeIdx < 0 {
+		m.settingsThemeIdx = 0
 	}
 	return m
 }
@@ -401,6 +417,76 @@ func (m *Model) handleMouse(msg tea.MouseMsg) tea.Cmd {
 	}
 	m.setFocus(m.paneAt(msg))
 	return nil
+}
+
+// settingsRowCount is the number of navigable rows in the settings modal:
+// the theme picker plus each toggle option.
+const settingsRowCount = 2
+
+func (m *Model) openSettings() {
+	m.settingsOpen = true
+	m.settingsCursor = 0
+	m.settingsThemeIdx = themeIndex(currentTheme.name)
+	if m.settingsThemeIdx < 0 {
+		m.settingsThemeIdx = 0
+	}
+}
+
+func (m *Model) closeSettings() {
+	m.settingsOpen = false
+	m.saveSettingsNow()
+}
+
+func (m *Model) handleSettingsKey(msg tea.KeyMsg) tea.Cmd {
+	switch msg.String() {
+	case "esc", "s":
+		m.closeSettings()
+		return nil
+	case "up", "k":
+		m.settingsCursor--
+		if m.settingsCursor < 0 {
+			m.settingsCursor = settingsRowCount - 1
+		}
+		return nil
+	case "down", "j":
+		m.settingsCursor++
+		if m.settingsCursor >= settingsRowCount {
+			m.settingsCursor = 0
+		}
+		return nil
+	case "left", "h":
+		if m.settingsCursor == 0 {
+			setThemeByIndex(m.settingsThemeIdx - 1)
+			m.settingsThemeIdx = themeIndex(currentTheme.name)
+			m.saveSettingsNow()
+		}
+		return nil
+	case "right", "l":
+		if m.settingsCursor == 0 {
+			setThemeByIndex(m.settingsThemeIdx + 1)
+			m.settingsThemeIdx = themeIndex(currentTheme.name)
+			m.saveSettingsNow()
+		}
+		return nil
+	case "enter", " ":
+		switch m.settingsCursor {
+		case 0:
+			setThemeByIndex(m.settingsThemeIdx + 1)
+			m.settingsThemeIdx = themeIndex(currentTheme.name)
+		case 1:
+			m.showLineNumbers = !m.showLineNumbers
+			m.refreshFileVP()
+		}
+		m.saveSettingsNow()
+		return nil
+	}
+	return nil
+}
+
+func (m *Model) saveSettingsNow() {
+	if err := saveSettings(m.currentSettings()); err != nil {
+		m.lastErr = "settings save: " + err.Error()
+	}
 }
 
 func (m *Model) openModal(kind modalKind, initial, path string) {

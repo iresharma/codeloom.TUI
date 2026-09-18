@@ -21,16 +21,19 @@ func (m *Model) refreshFileVP() {
 	}
 	body := t.body
 	if t.showDiff && t.diff != "" {
-		m.fileVP.SetContent(renderDiff(t.diff))
+		m.fileVP.SetContent(renderDiff(t.diff, m.showLineNumbers))
 		return
 	}
-	m.fileVP.SetContent(renderSource(t.path, body))
+	m.fileVP.SetContent(renderSource(t.path, body, m.showLineNumbers))
 }
 
-func renderSource(path, content string) string {
+func renderSource(path, content string, lineNumbers bool) string {
 	highlighted, ok := highlight(path, content)
 	if !ok {
 		highlighted = content
+	}
+	if !lineNumbers {
+		return highlighted
 	}
 	return withLineNumbers(highlighted)
 }
@@ -75,14 +78,16 @@ func withLineNumbers(content string) string {
 	return b.String()
 }
 
-func renderDiff(content string) string {
+func renderDiff(content string, lineNumbers bool) string {
 	add := gitAdd()
 	del := gitUntracked()
 	hunk := lipgloss.NewStyle().Foreground(accent)
 	gutter := lipgloss.NewStyle().Foreground(dim)
 	var b strings.Builder
 	for i, line := range strings.Split(content, "\n") {
-		b.WriteString(gutter.Render(fmt.Sprintf("%4d │ ", i+1)))
+		if lineNumbers {
+			b.WriteString(gutter.Render(fmt.Sprintf("%4d │ ", i+1)))
+		}
 		switch {
 		case strings.HasPrefix(line, "+") && !strings.HasPrefix(line, "+++"):
 			b.WriteString(add.Render(line))

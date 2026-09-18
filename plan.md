@@ -25,7 +25,7 @@ Go + Charm client for the Codeloom engine. Assumes the engine TUI protocol slice
 - Tree: `hjkl`, `enter` open, `a` file, `A` dir, `r` rename, `d` delete, `R` refresh
 - Center: `enter` send, `ctrl+t`/`ctrl+p` next/prev tab, `ctrl+e` close tab, `ctrl+d` file diff
 - Right: `h`/`l` context|memory, `j`/`k` agents, `[`/`]` context sections, `enter` transcript, `r` refresh
-- Global: `ctrl+x` abort, `ctrl+u` undo, `ctrl+c` quit
+- Global: `ctrl+x` abort, `ctrl+u` undo, `ctrl+c` quit, `,` settings (theme + toggles)
 - Mouse: tabs, git paths, memory files, agent rows
 
 ## Stack

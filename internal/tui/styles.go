@@ -66,6 +66,24 @@ func fit(s string, w, h int) string {
 		Render(s)
 }
 
+// applyTheme copies the given theme's colors into the package-level color
+// vars above so every existing call site (chat.go, tabs.go, graph.go,
+// layout.go, context.go, fileview.go, stats.go, app.go, ...) picks up the
+// change without needing to be touched.
+func applyTheme(t theme) {
+	bg = t.bg
+	bgAlt = t.bgAlt
+	fg = t.fg
+	dim = t.dim
+	accent = t.accent
+	green = t.green
+	red = t.red
+	yellow = t.yellow
+	magenta = t.magenta
+	border = t.border
+	focusC = t.focusC
+}
+
 func sectionBorder() lipgloss.Style {
 	return lipgloss.NewStyle().
 		Border(lipgloss.NormalBorder()).
