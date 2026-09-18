@@ -117,6 +117,11 @@ type Model struct {
 	promptChoices     []string
 	promptCursor      int
 
+	settingsOpen            bool
+	settingsCursor          int
+	settingsMouseEnabled    bool
+	settingsFullHelpDefault bool
+
 	status   string
 	lastErr  string
 	quitting bool
@@ -207,6 +212,17 @@ func New(workspace string, eng *host.Engine, conn *client.Conn) Model {
 	if conn != nil {
 		m.events = conn.Events()
 	}
+
+	cfg := loadSettings()
+	applyTheme(cfg.Theme)
+	m.settingsMouseEnabled = cfg.MouseEnabled
+	m.settingsFullHelpDefault = cfg.FullHelpDefault
+	m.help.ShowAll = cfg.FullHelpDefault
+	// Note: settingsMouseEnabled only persists the preference; it does not
+	// retoggle mouse mode on this already-constructed tea.Program. main.go
+	// could read this setting on next startup to decide whether to pass
+	// tea.WithMouseCellMotion().
+
 	return m
 }
 
@@ -466,6 +482,61 @@ func (m *Model) commitModal() tea.Cmd {
 			return nil
 		}
 		return m.send(protocol.DeletePath(path))
+	}
+	return nil
+}
+
+// settingsRowCount is the number of theme rows plus the toggle rows shown
+// in the settings modal.
+func (m *Model) settingsRowCount() int {
+	return len(themeNames()) + 2
+}
+
+func (m *Model) openSettings() {
+	m.settingsOpen = true
+	m.settingsCursor = 0
+}
+
+func (m *Model) closeSettings() {
+	m.settingsOpen = false
+}
+
+// settingsPersist writes the current theme + toggle state to disk.
+func (m *Model) settingsPersist() {
+	_ = saveSettings(Settings{
+		Theme:           activeThemeName,
+		MouseEnabled:    m.settingsMouseEnabled,
+		FullHelpDefault: m.settingsFullHelpDefault,
+	})
+}
+
+func (m *Model) handleSettingsKey(msg tea.KeyMsg) tea.Cmd {
+	switch msg.String() {
+	case "esc", "S":
+		m.closeSettings()
+		return nil
+	case "k", "up":
+		n := m.settingsRowCount()
+		m.settingsCursor = (m.settingsCursor - 1 + n) % n
+		return nil
+	case "j", "down":
+		n := m.settingsRowCount()
+		m.settingsCursor = (m.settingsCursor + 1) % n
+		return nil
+	case "enter", " ":
+		names := themeNames()
+		switch {
+		case m.settingsCursor < len(names):
+			applyTheme(names[m.settingsCursor])
+			m.settingsPersist()
+		case m.settingsCursor == len(names):
+			m.settingsMouseEnabled = !m.settingsMouseEnabled
+			m.settingsPersist()
+		case m.settingsCursor == len(names)+1:
+			m.settingsFullHelpDefault = !m.settingsFullHelpDefault
+			m.settingsPersist()
+		}
+		return nil
 	}
 	return nil
 }

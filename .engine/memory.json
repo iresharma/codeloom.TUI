@@ -1,0 +1,58 @@
+{
+  "files": {
+    "internal/tui/layout.go": {
+      "purpose": "Added viewSettings() (RoundedBorder box like viewModal/viewFullHelp) rendering theme rows + 2 toggle rows with cursor highlight, and wired `if m.settingsOpen { ui = overlay(...) }` in View() after ...",
+      "entry_points": "viewSettings",
+      "constraints": "",
+      "note": "",
+      "note_sha": "9836421f1bca68f40ce16552befa631b329bbc1eded5f39160f6bfba674d4313",
+      "seen_sha": "9836421f1bca68f40ce16552befa631b329bbc1eded5f39160f6bfba674d4313",
+      "action": "read",
+      "updated_at": "2026-09-18T12:36:09.856426+00:00"
+    },
+    "internal/tui/keys.go": {
+      "purpose": "Added keySet.Settings bound to \"S\" (no clash found), added to ShortHelp/FullHelp, and handleKey now checks m.settingsOpen (mirroring the modal != modalNone check) before global keys, and the global...",
+      "entry_points": "newKeySet, handleKey",
+      "constraints": "Settings key is \"S\"; if a future binding needs \"S\" elsewhere, note the composer-focus guard added here.",
+      "note": "",
+      "note_sha": "c11df10ee96ca37e933436d8b683b3a3011eff6f260aa98dbd2643b3de75deb2",
+      "seen_sha": "c11df10ee96ca37e933436d8b683b3a3011eff6f260aa98dbd2643b3de75deb2",
+      "action": "read",
+      "updated_at": "2026-09-18T12:36:09.853586+00:00"
+    },
+    "internal/tui/app.go": {
+      "purpose": "Added Model fields settingsOpen/settingsCursor/settingsMouseEnabled/settingsFullHelpDefault; New() now calls loadSettings()+applyTheme(cfg.Theme) and seeds those fields plus m.help.ShowAll; added o...",
+      "entry_points": "openSettings, closeSettings, handleSettingsKey, settingsPersist",
+      "constraints": "handleSettingsKey uses j/down,k/up like handleTreeKey; rows = themeNames() then 2 toggle rows in that order; mouse-enabled toggle only persists a preference, does not retoggle the live tea.Program ...",
+      "note": "",
+      "note_sha": "3113ee95fb5273cc6ab3193db9609b70d991baf30f0c717531237fed4b0398ba",
+      "seen_sha": "3113ee95fb5273cc6ab3193db9609b70d991baf30f0c717531237fed4b0398ba",
+      "action": "read",
+      "updated_at": "2026-09-18T12:36:09.851213+00:00"
+    },
+    "internal/tui/config.go": {
+      "purpose": "New file: JSON persistence for TUI settings (theme + two toggles) under os.UserConfigDir()/codeloom/tui-settings.json.",
+      "entry_points": "Settings struct, loadSettings(), saveSettings(Settings)",
+      "constraints": "loadSettings must never error the app \u2014 falls back to defaultSettings() on any read/parse failure.",
+      "note": "",
+      "note_sha": "3a0c9a6a5b83620dea886a505178647c33b2b1d0193700f4c828b2b67f09b0ca",
+      "seen_sha": "3a0c9a6a5b83620dea886a505178647c33b2b1d0193700f4c828b2b67f09b0ca",
+      "action": "read",
+      "updated_at": "2026-09-18T12:36:09.848713+00:00"
+    },
+    "internal/tui/styles.go": {
+      "purpose": "Palette vars plus a theme registry: type theme struct, var themes map with default/dracula/solarized-dark, var activeThemeName, func applyTheme(name) bool reassigns bg/bgAlt/fg/dim/accent/green/red...",
+      "entry_points": "applyTheme, themeNames, activeThemeName",
+      "constraints": "Package-level color vars must stay vars (not const) since applyTheme reassigns them; \"default\" theme values must match original hardcoded palette exactly.",
+      "note": "",
+      "note_sha": "340c3c9923b47684e85bae8fbc28d92a8dc56972ee566f759bd7bc00445849b2",
+      "seen_sha": "340c3c9923b47684e85bae8fbc28d92a8dc56972ee566f759bd7bc00445849b2",
+      "action": "read",
+      "updated_at": "2026-09-18T12:36:09.842372+00:00"
+    }
+  },
+  "engineering": [],
+  "product": [],
+  "cicd": [],
+  "other": []
+}

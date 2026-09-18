@@ -101,6 +101,9 @@ func (m Model) View() string {
 	if m.modal != modalNone {
 		ui = overlay(m.width, m.height, ui, m.viewModal())
 	}
+	if m.settingsOpen {
+		ui = overlay(m.width, m.height, ui, m.viewSettings())
+	}
 	return zones.Scan(ui)
 }
 
@@ -242,6 +245,50 @@ func (m Model) viewModal() string {
 		BorderForeground(accent).
 		Padding(1, 2).
 		Width(min(60, max(24, m.width-4))).
+		Render(body)
+}
+
+func (m Model) viewSettings() string {
+	names := themeNames()
+	rowStyle := func(idx int, label string) string {
+		cursor := "  "
+		if idx == m.settingsCursor {
+			cursor = "› "
+		}
+		style := lipgloss.NewStyle().Foreground(fg)
+		if idx == m.settingsCursor {
+			style = style.Foreground(accent).Bold(true)
+		}
+		return cursor + style.Render(label)
+	}
+	onOff := func(v bool) string {
+		if v {
+			return "on"
+		}
+		return "off"
+	}
+
+	var lines []string
+	lines = append(lines, titleStyle().Render("Settings"), "")
+	lines = append(lines, dimStyle().Render("theme"))
+	for i, name := range names {
+		label := name
+		if name == activeThemeName {
+			label += "  (active)"
+		}
+		lines = append(lines, rowStyle(i, label))
+	}
+	lines = append(lines, "", dimStyle().Render("other"))
+	lines = append(lines, rowStyle(len(names), "Mouse support: "+onOff(m.settingsMouseEnabled)))
+	lines = append(lines, rowStyle(len(names)+1, "Show full help by default: "+onOff(m.settingsFullHelpDefault)))
+	lines = append(lines, "", dimStyle().Render("↑/↓ move · enter toggle/select · esc close"))
+
+	body := strings.Join(lines, "\n")
+	return lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(accent).
+		Padding(1, 2).
+		Width(min(56, max(24, m.width-4))).
 		Render(body)
 }
 
