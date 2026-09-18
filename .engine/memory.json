@@ -1,0 +1,48 @@
+{
+  "files": {
+    "internal/tui/app.go": {
+      "purpose": "Model now carries settings AppSettings, settingsOpen bool, settingsUI settingsModal; New() loads settings via loadSettings()+applyTheme() at startup. Added openSettings/closeSettings(save bool)/han...",
+      "entry_points": "openSettings, closeSettings, handleSettingsKey, settingsAdjust, handleTreeKey (case \"d\")",
+      "constraints": "Do not remove the ConfirmDelete==true path (must still open modalDelete and rely on commitModal's modalDelete branch for confirm-on-delete flow).",
+      "note": "",
+      "note_sha": "310233934fd9d66f119ed594d4a7077aeab4f0961998cf819b8ea1cfd31b2065",
+      "seen_sha": "310233934fd9d66f119ed594d4a7077aeab4f0961998cf819b8ea1cfd31b2065",
+      "action": "read",
+      "updated_at": "2026-09-18T15:00:33.417274+00:00"
+    },
+    "internal/tui/keys.go": {
+      "purpose": "Added keySet.Settings binding (ctrl+s, \"settings\"), wired into newKeySet(), ShortHelp()/FullHelp(), and handleKey(): settingsOpen check placed right after the m.modal!=modalNone check (same total-p...",
+      "entry_points": "newKeySet, handleKey, ShortHelp, FullHelp",
+      "constraints": "ctrl+s must not collide with any existing binding (verified none used it before).",
+      "note": "",
+      "note_sha": "0890e8d0389227ef92c338f2949e7b777ddc3c942e238f448f7e726547318cb7",
+      "seen_sha": "0890e8d0389227ef92c338f2949e7b777ddc3c942e238f448f7e726547318cb7",
+      "action": "read",
+      "updated_at": "2026-09-18T14:58:56.669130+00:00"
+    },
+    "internal/tui/settings.go": {
+      "purpose": "Defines Theme struct + 3 built-in themes (themeTokyoNight/themeDracula/themeLight), AppSettings (ThemeName, ConfirmDelete) with JSON persistence under os.UserConfigDir()/codeloom-tui/settings.json ...",
+      "entry_points": "loadSettings(), AppSettings.save(), findTheme(name), applyTheme(t Theme) mutates styles.go package vars (bg,bgAlt,fg,dim,accent,green,red,yellow,magenta,border,focusC), themes slice",
+      "constraints": "applyTheme must stay in sync with styles.go var names; default AppSettings must reproduce today's Tokyo Night look (ConfirmDelete=true) so behavior is unchanged when no settings file exists.",
+      "note": "",
+      "note_sha": "b02a5c3bc260b192f51c8ecb7a7e3cb58560a42469b76944a1dd089a6f781412",
+      "seen_sha": "b02a5c3bc260b192f51c8ecb7a7e3cb58560a42469b76944a1dd089a6f781412",
+      "action": "read",
+      "updated_at": "2026-09-18T14:58:20.474472+00:00"
+    },
+    "internal/tui/layout.go": {
+      "purpose": "View() now overlays m.viewSettings() when m.settingsOpen, after the existing modal/help overlay checks. Added viewSettings() rendering a bordered card (same style as viewModal: RoundedBorder, accen...",
+      "entry_points": "viewSettings, View",
+      "constraints": "",
+      "note": "",
+      "note_sha": "1ca1cc4e032a0b9c6881db34b050a811d509d311704b2e59e16edbf3631ec90c",
+      "seen_sha": "1ca1cc4e032a0b9c6881db34b050a811d509d311704b2e59e16edbf3631ec90c",
+      "action": "read",
+      "updated_at": "2026-09-18T14:57:40.884263+00:00"
+    }
+  },
+  "engineering": [],
+  "product": [],
+  "cicd": [],
+  "other": []
+}

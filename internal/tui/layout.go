@@ -101,6 +101,9 @@ func (m Model) View() string {
 	if m.modal != modalNone {
 		ui = overlay(m.width, m.height, ui, m.viewModal())
 	}
+	if m.settingsOpen {
+		ui = overlay(m.width, m.height, ui, m.viewSettings())
+	}
 	return zones.Scan(ui)
 }
 
@@ -237,6 +240,37 @@ func (m Model) viewModal() string {
 		title = "delete " + m.modalPath + " ? (y/n)"
 	}
 	body := titleStyle().Render(title) + "\n\n" + m.modalInput.View() + "\n\n" + dimStyle().Render(hint)
+	return lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(accent).
+		Padding(1, 2).
+		Width(min(60, max(24, m.width-4))).
+		Render(body)
+}
+
+func (m Model) viewSettings() string {
+	rowStyle := func(selected bool) lipgloss.Style {
+		s := lipgloss.NewStyle()
+		if selected {
+			s = s.Foreground(bg).Background(accent).Bold(true)
+		} else {
+			s = s.Foreground(fg)
+		}
+		return s
+	}
+
+	themeRow := fmt.Sprintf("Theme: < %s >", m.settings.ThemeName)
+	checkbox := "[ ]"
+	if m.settings.ConfirmDelete {
+		checkbox = "[x]"
+	}
+	deleteRow := fmt.Sprintf("Confirm before delete: %s", checkbox)
+
+	body := titleStyle().Render("Settings") + "\n\n" +
+		rowStyle(m.settingsUI.cursor == 0).Render(themeRow) + "\n" +
+		rowStyle(m.settingsUI.cursor == 1).Render(deleteRow) + "\n\n" +
+		dimStyle().Render("↑/↓ select · ←/→ change · esc save & close")
+
 	return lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(accent).

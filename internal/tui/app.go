@@ -117,6 +117,10 @@ type Model struct {
 	promptChoices     []string
 	promptCursor      int
 
+	settings     AppSettings
+	settingsOpen bool
+	settingsUI   settingsModal
+
 	status   string
 	lastErr  string
 	quitting bool
@@ -204,6 +208,8 @@ func New(workspace string, eng *host.Engine, conn *client.Conn) Model {
 		orchState:   "idle",
 		status:      "connected",
 	}
+	m.settings = loadSettings()
+	applyTheme(findTheme(m.settings.ThemeName))
 	if conn != nil {
 		m.events = conn.Events()
 	}
@@ -470,6 +476,54 @@ func (m *Model) commitModal() tea.Cmd {
 	return nil
 }
 
+func (m *Model) openSettings() {
+	m.settingsOpen = true
+	m.settingsUI = settingsModal{}
+}
+
+func (m *Model) closeSettings(save bool) {
+	if save {
+		_ = m.settings.save()
+	}
+	m.settingsOpen = false
+}
+
+func (m *Model) handleSettingsKey(msg tea.KeyMsg) tea.Cmd {
+	switch msg.String() {
+	case "up", "k", "down", "j":
+		m.settingsUI.cursor = (m.settingsUI.cursor + 1) % 2
+	case "left", "h":
+		m.settingsAdjust(-1)
+	case "right", "l":
+		m.settingsAdjust(1)
+	case "enter", " ":
+		m.settingsAdjust(1)
+	case "esc":
+		m.closeSettings(true)
+		return nil
+	}
+	return nil
+}
+
+func (m *Model) settingsAdjust(delta int) {
+	switch m.settingsUI.cursor {
+	case 0:
+		idx := 0
+		for i, t := range themes {
+			if t.Name == m.settings.ThemeName {
+				idx = i
+				break
+			}
+		}
+		n := len(themes)
+		idx = (idx + delta%n + n) % n
+		m.settings.ThemeName = themes[idx].Name
+		applyTheme(findTheme(m.settings.ThemeName))
+	case 1:
+		m.settings.ConfirmDelete = !m.settings.ConfirmDelete
+	}
+}
+
 func (m *Model) handleTreeKey(msg tea.KeyMsg) tea.Cmd {
 	switch msg.String() {
 	case "j", "down":
@@ -510,6 +564,9 @@ func (m *Model) handleTreeKey(msg tea.KeyMsg) tea.Cmd {
 		n := m.tree.current()
 		if n == nil {
 			return nil
+		}
+		if !m.settings.ConfirmDelete {
+			return m.send(protocol.DeletePath(n.path))
 		}
 		m.openModal(modalDelete, "", n.path)
 	case "R":
