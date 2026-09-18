@@ -1,0 +1,78 @@
+{
+  "files": {
+    "internal/tui/keys.go": {
+      "purpose": "Added keySet.Settings binding (\",\"), included in FullHelp. handleKey intercepts m.settingsOpen first (returns handleSettingsKey result) then modal, then the \",\" Settings case sits in the global pan...",
+      "entry_points": "newKeySet(), handleKey(tea.KeyMsg), FullHelp()",
+      "constraints": "",
+      "note": "",
+      "note_sha": "8145b0953815516a9c3bc1c576e6b5694e75ab9aa30a914f5a8165e7aa5c6103",
+      "seen_sha": "8145b0953815516a9c3bc1c576e6b5694e75ab9aa30a914f5a8165e7aa5c6103",
+      "action": "read",
+      "updated_at": "2026-09-18T19:52:18.113817+00:00"
+    },
+    "internal/tui/settings_persist.go": {
+      "purpose": "JSON persistence for TUI user settings (theme name + show_line_numbers bool) at $UserConfigDir/codeloom-tui/settings.json.",
+      "entry_points": "loadSettings() (persistedSettings, error), saveSettings(persistedSettings) error, Model.currentSettings()",
+      "constraints": "Callers must treat load/save errors as non-fatal (fallback to defaults / ignore write failure), never panic or block UI.",
+      "note": "",
+      "note_sha": "89cfc834b28bf65c5729bb3c7aa79fc48a3d92c35f82be6fea01609973327d86",
+      "seen_sha": "89cfc834b28bf65c5729bb3c7aa79fc48a3d92c35f82be6fea01609973327d86",
+      "action": "read",
+      "updated_at": "2026-09-18T19:52:05.706562+00:00"
+    },
+    "internal/tui/themes.go": {
+      "purpose": "Defines theme struct (bg,bgAlt,fg,dim,accent,green,red,yellow,magenta,border,focusC lipgloss.Color + name) and built-in presets: Tokyo Night (default, index0), Dracula, Solarized Dark, Gruvbox. var...",
+      "entry_points": "setTheme(name string), setThemeByIndex(idx int), themeNames(), themeIndex(name string), currentTheme",
+      "constraints": "setTheme/setThemeByIndex must call applyTheme (styles.go) to mutate package color vars so all other TUI files keep compiling unchanged.",
+      "note": "",
+      "note_sha": "de798210b52e24711a8935aa0df7482e35d68908395a7653a4ca0613ddeaf2b3",
+      "seen_sha": "de798210b52e24711a8935aa0df7482e35d68908395a7653a4ca0613ddeaf2b3",
+      "action": "read",
+      "updated_at": "2026-09-18T19:52:05.704842+00:00"
+    },
+    "internal/tui/fileview.go": {
+      "purpose": "renderSource(path, content string, lineNumbers bool) and renderDiff(content string, lineNumbers bool) now take a lineNumbers flag driven by Model.showLineNumbers (wired from refreshFileVP), control...",
+      "entry_points": "refreshFileVP(), renderSource, renderDiff",
+      "constraints": "app_test.go calls renderSource/renderDiff directly with an explicit bool arg now - keep signatures in sync if changed again.",
+      "note": "",
+      "note_sha": "a83670d16c8b9607195d6f5d65c438960cdf766535142d3a644ef7624c6502ec",
+      "seen_sha": "a83670d16c8b9607195d6f5d65c438960cdf766535142d3a644ef7624c6502ec",
+      "action": "read",
+      "updated_at": "2026-09-18T19:50:29.348191+00:00"
+    },
+    "internal/tui/layout.go": {
+      "purpose": "View() now overlays viewSettings() (new bordered modal, modeled on viewModal) when m.settingsOpen, mutually exclusive-by-order with help/modal overlays (help then modal then settings, each independ...",
+      "entry_points": "viewSettings() string, themeRowLabel(idx int) string, checkbox(bool) string",
+      "constraints": "",
+      "note": "",
+      "note_sha": "6e8adaf994d54f5803925cd912e64084d3586589a3be20b66f3c9eaf7bb8773a",
+      "seen_sha": "6e8adaf994d54f5803925cd912e64084d3586589a3be20b66f3c9eaf7bb8773a",
+      "action": "read",
+      "updated_at": "2026-09-18T19:50:29.346314+00:00"
+    },
+    "internal/tui/app.go": {
+      "purpose": "Model now has showLineNumbers bool, settingsOpen bool, settingsCursor int, settingsThemeIdx int fields. New() loads persisted settings (theme+showLineNumbers) via loadSettings() and applies via set...",
+      "entry_points": "Model.openSettings(), Model.handleSettingsKey(tea.KeyMsg) tea.Cmd, Model.closeSettings(), Model.saveSettingsNow(), settingsRowCount const",
+      "constraints": "settingsOpen intercept lives in keys.go handleKey (checked before modal/help); this file only holds the state + business logic, not key dispatch.",
+      "note": "",
+      "note_sha": "c48af67f4b56e9ada52b58f8cdb2624def22aba5b2a462705e0acf987324b49f",
+      "seen_sha": "c48af67f4b56e9ada52b58f8cdb2624def22aba5b2a462705e0acf987324b49f",
+      "action": "read",
+      "updated_at": "2026-09-18T19:50:29.342593+00:00"
+    },
+    "internal/tui/styles.go": {
+      "purpose": "Package-level lipgloss color vars + style helpers, now with applyTheme(t theme) which mutates bg/bgAlt/fg/dim/accent/green/red/yellow/magenta/border/focusC in place from a theme value.",
+      "entry_points": "applyTheme(theme)",
+      "constraints": "Keep the package vars as mutable vars (not consts/funcs) - all other files reference them directly; theme switching must go through applyTheme, not by replacing the vars' declarations.",
+      "note": "",
+      "note_sha": "cbc58fc9d5e2cd3ace34cbe8e47cb1fc4b676b253d5667352bba4543cc657c25",
+      "seen_sha": "cbc58fc9d5e2cd3ace34cbe8e47cb1fc4b676b253d5667352bba4543cc657c25",
+      "action": "read",
+      "updated_at": "2026-09-18T19:50:29.338300+00:00"
+    }
+  },
+  "engineering": [],
+  "product": [],
+  "cicd": [],
+  "other": []
+}

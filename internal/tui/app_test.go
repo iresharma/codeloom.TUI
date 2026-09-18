@@ -151,14 +151,14 @@ func TestLayoutBreakpoints(t *testing.T) {
 }
 
 func TestSyntaxHighlighting(t *testing.T) {
-	out := renderSource("demo.py", "def greet():\n    return 1\n")
+	out := renderSource("demo.py", "def greet():\n    return 1\n", true)
 	if !strings.Contains(out, "\x1b") {
 		t.Fatalf("expected ANSI highlight, got %q", out)
 	}
 	if !strings.Contains(out, "1 │") {
 		t.Fatalf("expected line numbers, got %q", out)
 	}
-	diff := renderDiff("@@ -1 +1 @@\n-old\n+new\n")
+	diff := renderDiff("@@ -1 +1 @@\n-old\n+new\n", true)
 	if !strings.Contains(diff, "old") || !strings.Contains(diff, "new") {
 		t.Fatalf("diff render: %q", diff)
 	}

@@ -101,6 +101,9 @@ func (m Model) View() string {
 	if m.modal != modalNone {
 		ui = overlay(m.width, m.height, ui, m.viewModal())
 	}
+	if m.settingsOpen {
+		ui = overlay(m.width, m.height, ui, m.viewSettings())
+	}
 	return zones.Scan(ui)
 }
 
@@ -243,6 +246,50 @@ func (m Model) viewModal() string {
 		Padding(1, 2).
 		Width(min(60, max(24, m.width-4))).
 		Render(body)
+}
+
+func (m Model) viewSettings() string {
+	var b strings.Builder
+	b.WriteString(titleStyle().Render("settings") + "\n\n")
+
+	themeRow := "Theme:  " + themeRowLabel(m.settingsThemeIdx)
+	if m.settingsCursor == 0 {
+		b.WriteString(lipgloss.NewStyle().Foreground(accent).Bold(true).Render("❯ " + themeRow))
+	} else {
+		b.WriteString(dimStyle().Render("  " + themeRow))
+	}
+	b.WriteString("\n")
+
+	linesRow := "Line numbers:  " + checkbox(m.showLineNumbers)
+	if m.settingsCursor == 1 {
+		b.WriteString(lipgloss.NewStyle().Foreground(accent).Bold(true).Render("❯ " + linesRow))
+	} else {
+		b.WriteString(dimStyle().Render("  " + linesRow))
+	}
+	b.WriteString("\n\n")
+
+	b.WriteString(dimStyle().Render("↑/↓ navigate · enter/space toggle · ←/→ theme · esc close"))
+	return lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(accent).
+		Padding(1, 2).
+		Width(min(60, max(24, m.width-4))).
+		Render(strings.TrimRight(b.String(), "\n"))
+}
+
+func themeRowLabel(idx int) string {
+	names := themeNames()
+	if idx < 0 || idx >= len(names) {
+		return "< ? >"
+	}
+	return "< " + names[idx] + " >"
+}
+
+func checkbox(on bool) string {
+	if on {
+		return "[x]"
+	}
+	return "[ ]"
 }
 
 func (m Model) paneAt(msg tea.MouseMsg) focusKind {
