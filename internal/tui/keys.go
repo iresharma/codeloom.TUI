@@ -37,6 +37,7 @@ type keySet struct {
 	Peek, Ctx, Mem, InspRefresh key.Binding
 	SecUp, SecDown              key.Binding
 	PromptOK                    key.Binding
+	Settings                    key.Binding
 }
 
 func newKeySet() keySet {
@@ -72,6 +73,7 @@ func newKeySet() keySet {
 		SecUp:       key.NewBinding(key.WithKeys("k", "up"), key.WithHelp("k", "prev section")),
 		SecDown:     key.NewBinding(key.WithKeys("j", "down"), key.WithHelp("j", "next section")),
 		PromptOK:    key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "choose")),
+		Settings:    key.NewBinding(key.WithKeys("ctrl+s"), key.WithHelp("ctrl+s", "settings")),
 	}
 }
 
@@ -83,7 +85,7 @@ func (m Model) ShortHelp() []key.Binding {
 		}
 		return []key.Binding{k.PromptOK, k.Escape, k.Help}
 	}
-	base := []key.Binding{k.NextPane, k.Insert, k.Help}
+	base := []key.Binding{k.NextPane, k.Insert, k.Settings, k.Help}
 	switch m.focus {
 	case focusTree:
 		return []key.Binding{k.Open, k.NewFile, k.Rename, k.NextPane, k.Insert, k.Help}
@@ -112,6 +114,7 @@ func (m Model) FullHelp() [][]key.Binding {
 		{k.TabPrev, k.TabNext, k.TabClose, k.Diff},
 		{k.Open, k.NewFile, k.NewDir, k.Rename, k.Delete, k.Refresh},
 		{k.Peek, k.Ctx, k.Mem, k.Undo, k.Abort, k.Quit},
+		{k.Settings},
 	}
 }
 
@@ -163,6 +166,9 @@ func (m *Model) handleKey(msg tea.KeyMsg) (cmd tea.Cmd, handled bool) {
 		return nil, true
 	case key.Matches(msg, k.Abort):
 		return m.send(protocol.AbortAgent(m.chatFilter)), true
+	case key.Matches(msg, k.Settings):
+		m.openSettingsModal()
+		return nil, true
 	}
 	if m.help.ShowAll {
 		if key.Matches(msg, k.Escape) {

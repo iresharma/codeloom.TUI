@@ -18,6 +18,7 @@ import (
 	"github.com/iresharma/codeloom.TUI/internal/client"
 	"github.com/iresharma/codeloom.TUI/internal/host"
 	"github.com/iresharma/codeloom.TUI/internal/protocol"
+	"github.com/iresharma/codeloom.TUI/internal/settings"
 )
 
 type tab struct {
@@ -59,6 +60,7 @@ const (
 	modalCreateDir
 	modalRename
 	modalDelete
+	modalSettings
 )
 
 type eventMsg protocol.Event
@@ -117,12 +119,17 @@ type Model struct {
 	promptChoices     []string
 	promptCursor      int
 
+	settings            settings.Settings
+	settingsCursor      int
+	settingsThemeCursor int
+	settingsOrigTheme   string
+
 	status   string
 	lastErr  string
 	quitting bool
 }
 
-func New(workspace string, eng *host.Engine, conn *client.Conn) Model {
+func New(workspace string, eng *host.Engine, conn *client.Conn, sett settings.Settings) Model {
 	ta := textarea.New()
 	ta.Placeholder = "message the orchestrator"
 	ta.Prompt = "› "
@@ -203,6 +210,7 @@ func New(workspace string, eng *host.Engine, conn *client.Conn) Model {
 		agentChat:   map[string][]chatLine{},
 		orchState:   "idle",
 		status:      "connected",
+		settings:    sett,
 	}
 	if conn != nil {
 		m.events = conn.Events()
@@ -411,7 +419,23 @@ func (m *Model) openModal(kind modalKind, initial, path string) {
 	m.modalInput.Focus()
 }
 
+func (m *Model) openSettingsModal() {
+	m.modal = modalSettings
+	m.settingsCursor = 0
+	m.settingsOrigTheme = m.settings.Theme
+	m.settingsThemeCursor = 0
+	for i, name := range themeOrder {
+		if name == m.settings.Theme {
+			m.settingsThemeCursor = i
+			break
+		}
+	}
+}
+
 func (m *Model) handleModalKey(msg tea.KeyMsg) tea.Cmd {
+	if m.modal == modalSettings {
+		return m.handleSettingsModalKey(msg)
+	}
 	switch msg.String() {
 	case "esc":
 		m.modal = modalNone
@@ -423,6 +447,52 @@ func (m *Model) handleModalKey(msg tea.KeyMsg) tea.Cmd {
 	var cmd tea.Cmd
 	m.modalInput, cmd = m.modalInput.Update(msg)
 	return cmd
+}
+
+func (m *Model) handleSettingsModalKey(msg tea.KeyMsg) tea.Cmd {
+	switch msg.String() {
+	case "esc":
+		applyTheme(m.settingsOrigTheme)
+		m.settings.Theme = m.settingsOrigTheme
+		m.modal = modalNone
+		return nil
+	case "up", "k":
+		m.settingsCursor = (m.settingsCursor - 1 + 2) % 2
+		return nil
+	case "down", "j":
+		m.settingsCursor = (m.settingsCursor + 1) % 2
+		return nil
+	case "left", "h":
+		if m.settingsCursor == 0 {
+			n := len(themeOrder)
+			m.settingsThemeCursor = (m.settingsThemeCursor - 1 + n) % n
+			m.settings.Theme = themeOrder[m.settingsThemeCursor]
+			applyTheme(m.settings.Theme)
+		}
+		return nil
+	case "right", "l":
+		if m.settingsCursor == 0 {
+			n := len(themeOrder)
+			m.settingsThemeCursor = (m.settingsThemeCursor + 1) % n
+			m.settings.Theme = themeOrder[m.settingsThemeCursor]
+			applyTheme(m.settings.Theme)
+		}
+		return nil
+	case " ", "space":
+		if m.settingsCursor == 1 {
+			m.settings.MouseEnabled = !m.settings.MouseEnabled
+			if m.settings.MouseEnabled {
+				return tea.EnableMouseCellMotion
+			}
+			return tea.DisableMouse
+		}
+		return nil
+	case "enter", "s":
+		_ = settings.Save(m.settings)
+		m.modal = modalNone
+		return nil
+	}
+	return nil
 }
 
 func (m *Model) commitModal() tea.Cmd {

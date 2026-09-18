@@ -224,6 +224,9 @@ func overlay(w, h int, _, box string) string {
 }
 
 func (m Model) viewModal() string {
+	if m.modal == modalSettings {
+		return m.viewSettingsModal()
+	}
 	title := "input"
 	hint := "enter confirm · esc cancel"
 	switch m.modal {
@@ -237,6 +240,36 @@ func (m Model) viewModal() string {
 		title = "delete " + m.modalPath + " ? (y/n)"
 	}
 	body := titleStyle().Render(title) + "\n\n" + m.modalInput.View() + "\n\n" + dimStyle().Render(hint)
+	return lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(accent).
+		Padding(1, 2).
+		Width(min(60, max(24, m.width-4))).
+		Render(body)
+}
+
+func (m Model) viewSettingsModal() string {
+	rowStyle := func(active bool) lipgloss.Style {
+		if active {
+			return lipgloss.NewStyle().Foreground(focusC).Bold(true)
+		}
+		return dimStyle()
+	}
+
+	themeName := currentThemeName
+	if m.settingsThemeCursor >= 0 && m.settingsThemeCursor < len(themeOrder) {
+		themeName = themeOrder[m.settingsThemeCursor]
+	}
+	themeRow := rowStyle(m.settingsCursor == 0).Render(fmt.Sprintf("Theme:  < %s >", themeName))
+
+	check := "[ ]"
+	if m.settings.MouseEnabled {
+		check = "[x]"
+	}
+	mouseRow := rowStyle(m.settingsCursor == 1).Render(fmt.Sprintf("Mouse support:  %s", check))
+
+	hint := dimStyle().Render("↑/↓ select  ←/→ change  space toggle  enter save  esc cancel")
+	body := titleStyle().Render("Settings") + "\n\n" + themeRow + "\n" + mouseRow + "\n\n" + hint
 	return lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(accent).

@@ -256,7 +256,7 @@ func renderLines(lines []chatLine, streaming bool, w int) string {
 
 func renderMarkdown(text string, w int) string {
 	r, err := glamour.NewTermRenderer(
-		glamour.WithStandardStyle("dark"),
+		glamour.WithStandardStyle(glamourStyleForTheme()),
 		glamour.WithWordWrap(w),
 	)
 	if err != nil {

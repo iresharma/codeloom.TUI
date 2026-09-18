@@ -8,6 +8,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/iresharma/codeloom.TUI/internal/client"
 	"github.com/iresharma/codeloom.TUI/internal/host"
+	"github.com/iresharma/codeloom.TUI/internal/settings"
 	"github.com/iresharma/codeloom.TUI/internal/tui"
 )
 
@@ -32,8 +33,18 @@ func main() {
 		fmt.Fprintf(os.Stderr, "connect: %v\n", err)
 		os.Exit(1)
 	}
-	model := tui.New(workspace, eng, conn)
-	p := tea.NewProgram(model, tea.WithAltScreen(), tea.WithMouseCellMotion())
+	loadedSettings, err := settings.Load()
+	if err != nil {
+		loadedSettings = settings.Default()
+	}
+	tui.ApplyTheme(loadedSettings.Theme)
+
+	model := tui.New(workspace, eng, conn, loadedSettings)
+	opts := []tea.ProgramOption{tea.WithAltScreen()}
+	if loadedSettings.MouseEnabled {
+		opts = append(opts, tea.WithMouseCellMotion())
+	}
+	p := tea.NewProgram(model, opts...)
 	final, err := p.Run()
 	if m, ok := final.(tui.Model); ok {
 		m.Close()
