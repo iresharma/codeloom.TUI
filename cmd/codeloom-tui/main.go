@@ -33,7 +33,11 @@ func main() {
 		os.Exit(1)
 	}
 	model := tui.New(workspace, eng, conn)
-	p := tea.NewProgram(model, tea.WithAltScreen(), tea.WithMouseCellMotion())
+	opts := []tea.ProgramOption{tea.WithAltScreen()}
+	if model.MouseEnabled() {
+		opts = append(opts, tea.WithMouseCellMotion())
+	}
+	p := tea.NewProgram(model, opts...)
 	final, err := p.Run()
 	if m, ok := final.(tui.Model); ok {
 		m.Close()

@@ -1,0 +1,68 @@
+{
+  "files": {
+    "internal/tui/keys.go": {
+      "purpose": "Added Settings key.Binding (key \"S\", capital, shift+s) to keySet; wired into ShortHelp/FullHelp; handleKey now checks m.settingsOpen before the global Quit/Help/Abort switch (delegating fully to ha...",
+      "entry_points": "keySet.Settings, handleKey() gate order: modal -> settingsOpen -> quit/help/abort -> help.ShowAll -> promptKey -> composer -> global switch (incl Settings) -> per-pane dispatch",
+      "constraints": "Capital \"S\" chosen since lowercase s/other single letters are used per-pane (a/A/r/d/R in tree, etc.); composer-focus block returns before reaching the Settings case so typing \"S\" in the composer t...",
+      "note": "",
+      "note_sha": "c14f95196cda3fba4ed1cba81e8db20398b862e3c7dc3adb33164885815e4ffb",
+      "seen_sha": "c14f95196cda3fba4ed1cba81e8db20398b862e3c7dc3adb33164885815e4ffb",
+      "action": "read",
+      "updated_at": "2026-09-18T17:05:55.822026+00:00"
+    },
+    "internal/tui/app.go": {
+      "purpose": "Model gained config Config, settingsOpen bool, settingsIndex int fields; New() loads config via LoadConfig()+setTheme() before constructing Model; added openSettings/closeSettings(saves config)/mov...",
+      "entry_points": "Model.config, Model.settingsOpen, openSettings(), closeSettings(), handleSettingsKey(tea.KeyMsg), activateSettingsRow(), Model.MouseEnabled()",
+      "constraints": "settingsRowCount=2 (0=theme cycle, 1=mouse toggle); closeSettings persists via config.Save() and surfaces errors into m.lastErr; existing modal/openModal/handleModalKey/commitModal untouched.",
+      "note": "",
+      "note_sha": "524c07febf2dcc66a3725a7324e8de3f615fbadd224fce5ca0ec81d3bcc9c10f",
+      "seen_sha": "524c07febf2dcc66a3725a7324e8de3f615fbadd224fce5ca0ec81d3bcc9c10f",
+      "action": "read",
+      "updated_at": "2026-09-18T17:05:12.998513+00:00"
+    },
+    "cmd/codeloom-tui/main.go": {
+      "purpose": "tea.NewProgram now conditionally includes tea.WithMouseCellMotion() based on model.MouseEnabled() (reflecting the loaded/persisted config) instead of always enabling mouse.",
+      "entry_points": "",
+      "constraints": "",
+      "note": "",
+      "note_sha": "c39a3382d3b3a1da3203001ecfaac9348dbc58bb6460805f72d475aa25af3e5b",
+      "seen_sha": "c39a3382d3b3a1da3203001ecfaac9348dbc58bb6460805f72d475aa25af3e5b",
+      "action": "read",
+      "updated_at": "2026-09-18T17:02:16.290831+00:00"
+    },
+    "internal/tui/config.go": {
+      "purpose": "New file: JSON-persisted TUI config (Theme string, MouseEnabled bool) at os.UserConfigDir()/codeloom/config.json.",
+      "entry_points": "Config struct, LoadConfig(), (Config).Save(), defaultConfig(), configPath()",
+      "constraints": "LoadConfig falls back to defaultConfig() on missing/corrupt file; Save creates parent dir with 0o755, writes file 0o644.",
+      "note": "",
+      "note_sha": "7227b09f2ab9780f7ca0df09659214d3fe215248d375732352a796df351b932c",
+      "seen_sha": "7227b09f2ab9780f7ca0df09659214d3fe215248d375732352a796df351b932c",
+      "action": "read",
+      "updated_at": "2026-09-18T17:01:36.670754+00:00"
+    },
+    "internal/tui/layout.go": {
+      "purpose": "Added viewSettings() bordered-box overlay (theme row + mouse-support row, cursor highlight) rendered in View() via `if m.settingsOpen { ui = overlay(...) }`, following the viewModal()/viewFullHelp(...",
+      "entry_points": "viewSettings()",
+      "constraints": "",
+      "note": "",
+      "note_sha": "a406021715c4a7b2488b3f58b78935ef2819096ca8b17b1ea7265f3ce212db6e",
+      "seen_sha": "a406021715c4a7b2488b3f58b78935ef2819096ca8b17b1ea7265f3ce212db6e",
+      "action": "read",
+      "updated_at": "2026-09-18T17:00:49.688646+00:00"
+    },
+    "internal/tui/styles.go": {
+      "purpose": "Palette vars (bg,bgAlt,fg,dim,accent,green,red,yellow,magenta,border,focusC) are now mutable, populated from named theme presets instead of literals.",
+      "entry_points": "setTheme(themeName), nextTheme(), currentTheme var, themeOrder, themes map, ThemeTokyoNight/ThemeDracula/ThemeLight consts, init() calls setTheme(ThemeTokyoNight)",
+      "constraints": "All other tui files reference bg/fg/accent/etc by name unchanged; do not revert to const literals; add new presets to both themes map and themeOrder slice together.",
+      "note": "",
+      "note_sha": "5500eebd04f61a7941d30d03a7d82e87c97a4d5f7071c71353499af8a32b6514",
+      "seen_sha": "5500eebd04f61a7941d30d03a7d82e87c97a4d5f7071c71353499af8a32b6514",
+      "action": "read",
+      "updated_at": "2026-09-18T17:00:49.679013+00:00"
+    }
+  },
+  "engineering": [],
+  "product": [],
+  "cicd": [],
+  "other": []
+}

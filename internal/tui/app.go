@@ -117,6 +117,10 @@ type Model struct {
 	promptChoices     []string
 	promptCursor      int
 
+	config        Config
+	settingsOpen  bool
+	settingsIndex int
+
 	status   string
 	lastErr  string
 	quitting bool
@@ -180,6 +184,9 @@ func New(workspace string, eng *host.Engine, conn *client.Conn) Model {
 	h.Styles.FullKey = lipgloss.NewStyle().Foreground(accent)
 	h.Styles.FullDesc = dimStyle()
 
+	cfg := LoadConfig()
+	setTheme(themeName(cfg.Theme))
+
 	m := Model{
 		workspace:   workspace,
 		engine:      eng,
@@ -203,6 +210,7 @@ func New(workspace string, eng *host.Engine, conn *client.Conn) Model {
 		agentChat:   map[string][]chatLine{},
 		orchState:   "idle",
 		status:      "connected",
+		config:      cfg,
 	}
 	if conn != nil {
 		m.events = conn.Events()
@@ -401,6 +409,72 @@ func (m *Model) handleMouse(msg tea.MouseMsg) tea.Cmd {
 	}
 	m.setFocus(m.paneAt(msg))
 	return nil
+}
+
+// MouseEnabled reports whether the persisted config has mouse support
+// turned on. Used by main() to decide whether to pass
+// tea.WithMouseCellMotion to the bubbletea program.
+func (m Model) MouseEnabled() bool {
+	return m.config.MouseEnabled
+}
+
+const settingsRowCount = 2
+
+func (m *Model) openSettings() {
+	m.settingsOpen = true
+	m.settingsIndex = 0
+}
+
+// closeSettings persists the current config to disk and exits settings
+// mode. Save errors are surfaced via lastErr like other background failures.
+func (m *Model) closeSettings() {
+	m.settingsOpen = false
+	if err := m.config.Save(); err != nil {
+		m.lastErr = err.Error()
+	}
+}
+
+func (m *Model) moveSettingsCursor(delta int) {
+	n := settingsRowCount
+	m.settingsIndex = ((m.settingsIndex+delta)%n + n) % n
+}
+
+// activateSettingsRow toggles/cycles the value for the currently selected
+// settings row. It returns a tea.Cmd when the change needs to notify
+// bubbletea (e.g. enabling/disabling mouse reporting).
+func (m *Model) activateSettingsRow() tea.Cmd {
+	switch m.settingsIndex {
+	case 0:
+		next := nextTheme()
+		setTheme(next)
+		m.config.Theme = string(next)
+	case 1:
+		m.config.MouseEnabled = !m.config.MouseEnabled
+		if m.config.MouseEnabled {
+			return tea.EnableMouseCellMotion
+		}
+		return tea.DisableMouse
+	}
+	return nil
+}
+
+func (m *Model) handleSettingsKey(msg tea.KeyMsg) (tea.Cmd, bool) {
+	switch msg.String() {
+	case "esc":
+		m.closeSettings()
+		return nil, true
+	case "up", "k":
+		m.moveSettingsCursor(-1)
+		return nil, true
+	case "down", "j":
+		m.moveSettingsCursor(1)
+		return nil, true
+	case "enter", " ":
+		return m.activateSettingsRow(), true
+	case "left", "right":
+		return m.activateSettingsRow(), true
+	}
+	return nil, true
 }
 
 func (m *Model) openModal(kind modalKind, initial, path string) {

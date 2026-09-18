@@ -101,6 +101,9 @@ func (m Model) View() string {
 	if m.modal != modalNone {
 		ui = overlay(m.width, m.height, ui, m.viewModal())
 	}
+	if m.settingsOpen {
+		ui = overlay(m.width, m.height, ui, m.viewSettings())
+	}
 	return zones.Scan(ui)
 }
 
@@ -243,6 +246,37 @@ func (m Model) viewModal() string {
 		Padding(1, 2).
 		Width(min(60, max(24, m.width-4))).
 		Render(body)
+}
+
+func (m Model) viewSettings() string {
+	mouseLabel := "off"
+	if m.config.MouseEnabled {
+		mouseLabel = "on"
+	}
+	rows := []struct{ label, value string }{
+		{"theme", string(currentTheme)},
+		{"mouse support", mouseLabel},
+	}
+	var b strings.Builder
+	b.WriteString(titleStyle().Render("settings") + "\n\n")
+	for i, r := range rows {
+		mark := "  "
+		line := fmt.Sprintf("%-16s %s", r.label, r.value)
+		if i == m.settingsIndex {
+			mark = "❯ "
+			line = lipgloss.NewStyle().Foreground(accent).Bold(true).Render(line)
+		} else {
+			line = lipgloss.NewStyle().Foreground(fg).Render(line)
+		}
+		b.WriteString(mark + line + "\n")
+	}
+	b.WriteString("\n" + dimStyle().Render("up/down move · enter/space/←→ change · esc save & close"))
+	return lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(accent).
+		Padding(1, 2).
+		Width(min(56, max(32, m.width-4))).
+		Render(strings.TrimRight(b.String(), "\n"))
 }
 
 func (m Model) paneAt(msg tea.MouseMsg) focusKind {
