@@ -7,10 +7,11 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/iresharma/codeloom.TUI/internal/protocol"
+	"github.com/iresharma/codeloom.TUI/internal/settings"
 )
 
 func TestFileContentOpensTab(t *testing.T) {
-	m := New(t.TempDir(), nil, nil)
+	m := New(t.TempDir(), nil, nil, settings.Default())
 	m.handleEvent(mustEvent(`{"type":"FileContent","path":"a.py","content":"print(1)"}`))
 	if len(m.tabs) != 1 || m.tabs[0].path != "a.py" || m.tabs[0].body != "print(1)" {
 		t.Fatalf("tabs %#v", m.tabs)
@@ -24,7 +25,7 @@ func TestFileContentOpensTab(t *testing.T) {
 }
 
 func TestStatsUpdatedReadsEnginePayload(t *testing.T) {
-	m := New(t.TempDir(), nil, nil)
+	m := New(t.TempDir(), nil, nil, settings.Default())
 	mod, _ := m.Update(tea.WindowSizeMsg{Width: 140, Height: 40})
 	m = mod.(Model)
 	m.handleEvent(mustEvent(`{"type":"StatsUpdated","stats":{"prompt_tokens":12400,"completion_tokens":3100,"cached_tokens":400,"total_tokens":15500,"cost":0.041,"turns":3,"elapsed_s":18.2,"agent_runs":[{"agent_id":"a1","profile":"coder","cost":1.25}]}}`))
@@ -44,7 +45,7 @@ func TestStatsUpdatedReadsEnginePayload(t *testing.T) {
 }
 
 func TestGitAndMemoryEvents(t *testing.T) {
-	m := New(t.TempDir(), nil, nil)
+	m := New(t.TempDir(), nil, nil, settings.Default())
 	m.handleEvent(mustEvent(`{"type":"GitStateUpdated","git":{"branch":"main","dirty":true,"staged":["a.py"],"unstaged":[],"untracked":["b.py"]}}`))
 	if m.git.branch != "main" || len(m.git.staged) != 1 || len(m.git.untracked) != 1 {
 		t.Fatalf("git %#v", m.git)
@@ -76,7 +77,7 @@ func TestAssistantMessageWrapsAtPaneWidth(t *testing.T) {
 }
 
 func TestFocusCodeDoesNotTypeIntoComposer(t *testing.T) {
-	m := New(t.TempDir(), nil, nil)
+	m := New(t.TempDir(), nil, nil, settings.Default())
 	mod, _ := m.Update(tea.WindowSizeMsg{Width: 140, Height: 40})
 	m = mod.(Model)
 	m.openFileTab("a.py", strings.Repeat("line\n", 80))
@@ -93,7 +94,7 @@ func TestFocusCodeDoesNotTypeIntoComposer(t *testing.T) {
 }
 
 func TestTabSwitchBrackets(t *testing.T) {
-	m := New(t.TempDir(), nil, nil)
+	m := New(t.TempDir(), nil, nil, settings.Default())
 	mod, _ := m.Update(tea.WindowSizeMsg{Width: 140, Height: 40})
 	m = mod.(Model)
 	m.openFileTab("a.py", "a")
@@ -115,7 +116,7 @@ func TestTabSwitchBrackets(t *testing.T) {
 }
 
 func TestLayoutBreakpoints(t *testing.T) {
-	m := New(t.TempDir(), nil, nil)
+	m := New(t.TempDir(), nil, nil, settings.Default())
 	m.width, m.height = 80, 24
 	d := m.layout()
 	if !d.compact || !d.hideInspect || d.center < 20 {
@@ -165,7 +166,7 @@ func TestSyntaxHighlighting(t *testing.T) {
 }
 
 func TestSwitchMemoryFromGraphAndInspect(t *testing.T) {
-	m := New(t.TempDir(), nil, nil)
+	m := New(t.TempDir(), nil, nil, settings.Default())
 	mod, _ := m.Update(tea.WindowSizeMsg{Width: 140, Height: 40})
 	m = mod.(Model)
 	m.setFocus(focusGraph)
@@ -191,7 +192,7 @@ func TestSwitchMemoryFromGraphAndInspect(t *testing.T) {
 }
 
 func TestCompactInspectOverlay(t *testing.T) {
-	m := New(t.TempDir(), nil, nil)
+	m := New(t.TempDir(), nil, nil, settings.Default())
 	mod, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
 	m = mod.(Model)
 	mod, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'5'}})
@@ -207,7 +208,7 @@ func TestCompactInspectOverlay(t *testing.T) {
 }
 
 func TestHelpBindings(t *testing.T) {
-	m := New(t.TempDir(), nil, nil)
+	m := New(t.TempDir(), nil, nil, settings.Default())
 	mod, _ := m.Update(tea.WindowSizeMsg{Width: 140, Height: 40})
 	m = mod.(Model)
 	if len(m.ShortHelp()) == 0 {
@@ -219,19 +220,22 @@ func TestHelpBindings(t *testing.T) {
 	if m.help.ShowAll {
 		t.Fatal("help should start collapsed")
 	}
+	foot := m.viewFooter()
+	if !strings.Contains(foot, "tab") && !strings.Contains(foot, "insert") && !strings.Contains(foot, "?") {
+		t.Fatalf("footer missing help hints: %q", foot)
+	}
 	mod, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}})
 	m = mod.(Model)
 	if !m.help.ShowAll {
 		t.Fatal("? should open full help")
 	}
-	foot := m.viewFooter()
-	if !strings.Contains(foot, "tab") && !strings.Contains(foot, "insert") && !strings.Contains(foot, "?") {
-		t.Fatalf("footer missing help hints: %q", foot)
+	if view := m.View(); !strings.Contains(view, "keys") || !strings.Contains(view, "? or esc close") {
+		t.Fatalf("full help missing from view: %q", view)
 	}
 }
 
 func TestComposerOnlyWhenFocused(t *testing.T) {
-	m := New(t.TempDir(), nil, nil)
+	m := New(t.TempDir(), nil, nil, settings.Default())
 	mod, _ := m.Update(tea.WindowSizeMsg{Width: 140, Height: 40})
 	m = mod.(Model)
 	if m.focus == focusComposer || m.input.Focused() {
@@ -255,7 +259,7 @@ func TestComposerOnlyWhenFocused(t *testing.T) {
 }
 
 func TestAgentPeekDoesNotStealFile(t *testing.T) {
-	m := New(t.TempDir(), nil, nil)
+	m := New(t.TempDir(), nil, nil, settings.Default())
 	mod, _ := m.Update(tea.WindowSizeMsg{Width: 140, Height: 40})
 	m = mod.(Model)
 	m.openFileTab("a.py", "print(1)")
@@ -275,7 +279,7 @@ func TestAgentPeekDoesNotStealFile(t *testing.T) {
 }
 
 func TestInspectTabsUseBrackets(t *testing.T) {
-	m := New(t.TempDir(), nil, nil)
+	m := New(t.TempDir(), nil, nil, settings.Default())
 	mod, _ := m.Update(tea.WindowSizeMsg{Width: 140, Height: 40})
 	m = mod.(Model)
 	m.handleEvent(mustEvent(`{"type":"ContextBreakdown","budget":1000,"prompt_tokens":400,"sections":[{"name":"system","chars":40,"tokens_est":200,"text":"You are the orchestrator.\nKeep replies short."},{"name":"files","chars":80,"tokens_est":800,"text":"internal/tui/app.go\nfunc (m Model) View()"}]}`))
@@ -313,7 +317,7 @@ func TestInspectTabsUseBrackets(t *testing.T) {
 }
 
 func TestInlinePromptNotModal(t *testing.T) {
-	m := New(t.TempDir(), nil, nil)
+	m := New(t.TempDir(), nil, nil, settings.Default())
 	mod, _ := m.Update(tea.WindowSizeMsg{Width: 140, Height: 40})
 	m = mod.(Model)
 	m.openFileTab("a.py", "print(1)")
